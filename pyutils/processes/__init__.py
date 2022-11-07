@@ -5,6 +5,7 @@
 
 """ Multiprocessing (native processes) helper functions. """
 
+# noinspection PyPackageRequirements
 import psutil
 
 

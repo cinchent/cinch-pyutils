@@ -26,17 +26,18 @@ except ImportError:  # (tolerate during 'pyutils' install only)
 try:
     import warnings
     warnings.filterwarnings('ignore', category=DeprecationWarning, module='pip._vendor.packaging.version')
-    # noinspection PyProtectedMember
+    # noinspection PyPackageRequirements,PyProtectedMember
     from pip._internal.cli.main import main as pip_main  # pylint:disable=protected-access
 except ImportError:
     warnings = None
     try:
+        # noinspection PyPackageRequirements
         import pip
-        pip_main = pip.main
+        pip_main = pip.main  # pylint:disable=no-member
     except ImportError:
         pip = pip_main = None  # pylint:disable=invalid-name
 
-from pyutils.git import (get_token, url_add_auth, url_parse, deploy_repo)
+from pyutils.git import (get_token, url_add_auth, url_parse, deploy_repo)  # pylint:disable=wrong-import-position
 
 ERROR_LOG = lambda *a, **k: print(*a, file=sys.stderr, **k)  # noqa:E731
 

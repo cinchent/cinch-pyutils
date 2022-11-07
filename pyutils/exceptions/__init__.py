@@ -95,6 +95,7 @@ class ExceptionString(str):
     """ Thin cover for a string used to describe a thrown exception. """
 
 
+# noinspection GrazieInspection
 def throw(exc_type, logmethod=None, message='', exception=None):
     """
     Raises an exception, first optionally calling a logger method to log the

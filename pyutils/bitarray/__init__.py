@@ -24,7 +24,7 @@ class BitArray:
      * Provides corrections and extensions to the canonical 'bitarray' package; extensions include left/right
        shift, byte array conversions, etc.
      * The semantics of "endianness" in that module is contrary to the computing industry notion: the standard
-       definition of endianness only pertains to multi-byte values, and dictates the ordering of whole bytes,
+       definition of endianness only pertains to multibyte values, and dictates the ordering of whole bytes,
        not of bits within bytes; thus, only bitarray "big" endianness is supported here, and the `endian`
        initializer keyword parameter should not be specified.
     """
@@ -864,6 +864,7 @@ def bitarray_encode(_structdef, _instruct, check_types=True, check_reserved=True
     raise NotImplementedError
 
 
+# noinspection GrazieInspection
 def bitarray_decode(_inbits, _structdef,  # noqa: C901 # pylint:disable=too-many-statements
                     check_types=True, check_reserved=True):
     """
@@ -932,6 +933,7 @@ def bitarray_decode(_inbits, _structdef,  # noqa: C901 # pylint:disable=too-many
         return fldoffs
 
     # pylint:disable=too-many-locals,too-many-branches,too-many-statements
+    # noinspection GrazieInspection
     def _decode_field(outstruct, flat, flddesc, flddef, prefix, inbits, fldoffs, etc):
         """
         Field decoder: Decodes the binary content of a (possibly composite) field, descending down the
@@ -1103,6 +1105,7 @@ def bitarray_decode(_inbits, _structdef,  # noqa: C901 # pylint:disable=too-many
 
         return etc, fldoffs
 
+    # noinspection GrazieInspection
     def _decode_fields(outstruct, flat, structdef, prefix, inbits, fldoffs):
         """
         Decodes binary content for all fields within a structure, hierarchically decoding content for all subfields

@@ -74,8 +74,8 @@ def issimple(entity):
 
 def isflat(entity):
     """
-    Determines whether or not an entity is "flat" -- i.e., is either itself
-    "simple" or an iterable composed completely of elements that are "simple".
+    Determines whether an entity is "flat" -- i.e., is either itself "simple"
+    or an iterable composed completely of elements that are "simple".
 
     .. note::
      * This will traverse through all elements of the specified entity if it
@@ -168,12 +168,13 @@ def getitem(haystack, needle, default=None):
 
 
 def find(selector, iterable, default=None, value=True):
+    # noinspection PyTypeChecker
     """
     Evaluates a predicate selector function repeatedly over all elements
     of an iterable until the selector's match criteria is met.
 
     :param selector: "truthy" Iterable, or function accepting a single parameter
-                     that is passed each successive element from `iterable`)
+                     that is passed each successive element from `iterable`
                      and returns "truthy" value, indicating "successful match".
     :param iterable: Iterable to traverse
     :param default:  Default value returned if no match is found
@@ -344,6 +345,7 @@ def iterslice(aniter, *slicespec):
 
 # noinspection PyUnboundLocalVariable,PyProtectedMember
 def take(num, iterable, pad=NotImplemented):
+    # noinspection PyTypeChecker,PyUnresolvedReferences
     """
     Returns a sequence containing the specified number of values, padded
     on left or right with a fixed pad value; result matches input type.
@@ -420,6 +422,7 @@ def take(num, iterable, pad=NotImplemented):
     return result
 
 
+# noinspection GrazieInspection
 def xlat(value, spec):
     """
     Translates a value according to a substitution specification.

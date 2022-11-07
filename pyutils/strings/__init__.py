@@ -22,6 +22,7 @@ except ImportError:
 
 
 def str_to_dict(dictstr):
+    # noinspection PyUnresolvedReferences
     """
     Converts a dictionary specification string into a dictionary constant.
 

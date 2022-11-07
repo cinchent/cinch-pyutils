@@ -34,6 +34,7 @@ except ImportError:
     Version = None
 
 
+# noinspection GrazieInspection
 def add_sys_path(dirspec, prepend=False):
     """
     Adds a directory to the Python system path.
@@ -142,6 +143,7 @@ def import_module_source(modname, filespec, altpath=None, expand=True, execute=F
         if altpath:
             syspath.append(str(altpath))
         modfilespec = filespec
+        # noinspection PyTypeChecker
         for pathdir in [None] + syspath:
             if pathdir:
                 modfilespec = Path(pathdir, filespec)

@@ -17,13 +17,17 @@ import random
 
 try:
     import getpass
+    # noinspection PyPackageRequirements
     from cryptography.hazmat.primitives import serialization as crypto_serialization
+    # noinspection PyPackageRequirements
     from cryptography.hazmat.primitives.asymmetric import rsa
+    # noinspection PyPackageRequirements
     from cryptography.hazmat.backends import default_backend as crypto_default_backend
 except ImportError:  # (tolerate during 'pyutils' install only)
     getpass = crypto_serialization = rsa = crypto_default_backend = None
 
 try:
+    # noinspection PyPackageRequirements
     from passlib.context import CryptContext
 except ImportError:
     CryptContext = None

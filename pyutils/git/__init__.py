@@ -23,6 +23,7 @@ import zipfile
 
 try:
     import getpass
+    # noinspection PyPackageRequirements
     import requests
 except ImportError:  # (tolerate during 'pyutils' install only)
     getpass = requests = None
