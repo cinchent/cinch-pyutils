@@ -219,7 +219,7 @@ def install_external_packages(package_urls, base_dir=None, reinstall=False, over
     with suppress(Exception):
         output = run_pip('list --format columns --editable')
         installed = {Path(t[-1]).stem: t[-1] for t in [d.split() for d in output.split('\n')][2:]}
-    
+
     # Determine external packages to (re)install.
     reinstalls = {}
     if not auth:
