@@ -82,7 +82,7 @@ def run_pip(command, pip_opts=DEFAULT_PIP_OPTS, command_opts=()):
         output = sys.stdout.getvalue().strip()
         sys.stdout, sys.stderr = std_prev
         if exc:
-            raise exc(output) from exc
+            raise exc.__class__(output) from exc
     return output
 
 
