@@ -143,7 +143,8 @@ def deploy_repo(base_dir, repo_name, url, branch=None, overwrite=False, **_):  #
     :rtype:  bool
 
     .. note::
-     * "Acquiring" the repo from GitHub depends upon the URL suffix, but defaults to a `git clone` operation.
+     * "Acquiring" the repo from GitHub depends upon the URL suffix, but defaults to a `git clone` operation; cloning
+       will include all submodules defined for the repo as well.
      * Acquisition will be attempted first as the current user, then as 'root' (if possible); in the latter case,
        file/directory ownership for the entire directory tree will be reassigned to the current user.
     """
@@ -193,7 +194,8 @@ def deploy_repo(base_dir, repo_name, url, branch=None, overwrite=False, **_):  #
             branch = f"--branch {branch}"
         for pfx in ('', 'sudo'):
             try:
-                result = subprocess.run("{} git clone {} {} {}".format(pfx, branch or '', url, repo_name),
+                result = subprocess.run("{} git clone --recurse-submodules {} {} {}"
+                                        .format(pfx, branch or '', url, repo_name),
                                         shell=True, check=False, encoding='utf-8',
                                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=200000)
                 if result.returncode == 0:
