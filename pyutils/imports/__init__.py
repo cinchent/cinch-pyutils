@@ -22,13 +22,22 @@ import importlib.machinery as impmach
 import importlib.util as imputil
 import warnings
 
-import pkg_resources
+try:
+    from importlib.metadata import version as pkg_version
+except ImportError:
+    import pkg_resources
+    warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
+
+    def pkg_version(pkg_name):
+        """ Resolve installed package version (pre-importlib). """
+        return pkg_resources.require(pkg_name)[0].version
 
 try:
     import requirements
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', category=DeprecationWarning)
         from distutils.version import LooseVersion as Version
+    warnings.filterwarnings("ignore", category=UserWarning, module="_distutils_hack")
 except ImportError:
     requirements = None
     Version = None
@@ -597,7 +606,7 @@ def check_package_requirements(requirements_filespec, packages=None, ignore=None
         req = reqlist.get(package_name)
         req = req.specs if req else []
         try:
-            actual = pkg_resources.require(package_name)[0].version
+            actual = pkg_version(package_name)
         except (Exception, BaseException):
             actual = None
         if not actual or not req:

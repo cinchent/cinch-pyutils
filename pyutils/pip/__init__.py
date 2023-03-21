@@ -270,6 +270,7 @@ def install_external_packages(package_urls, base_dir=None, reinstall=False, over
         err = None
         try:
             output = run_pip(['install', '--editable', pkgname], command_opts=install_opts)
+            # @@@ TODO: add --root-user-action=ignore when supported ubiquitously
         except RuntimeError as exc:
             err = exc
         if err:

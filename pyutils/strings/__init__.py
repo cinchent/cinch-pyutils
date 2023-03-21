@@ -7,8 +7,12 @@ Utilities to supplement native Python string processing.
 """
 import sys
 import json
+import warnings
 try:
-    from distutils.util import strtobool  # (deprecated)
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', category=DeprecationWarning)
+        from distutils.util import strtobool  # (deprecated)
+    warnings.filterwarnings("ignore", category=UserWarning, module="_distutils_hack")
 except ImportError:
     def strtobool(val):  # (cut-n-paste from distutils.util)  # pylint:disable=too-many-return-statements
         """ Converts a string representation of truth to true (1) or false (0), or raises ValueError. """

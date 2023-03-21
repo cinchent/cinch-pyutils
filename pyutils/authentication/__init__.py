@@ -35,7 +35,7 @@ def password_validate_local(username=None, password=None):
     """
     Checks user password against local OS user account credentials.
 
-    :param username: Username to authenticate against local OS user accounts (None => use USERNAME envirosym)
+    :param username: Username to authenticate against local OS user accounts (None => use USER envirosym)
     :type  username: Union(str, None)
     :param password: Password for user on local OS (None => use PASSWORD envirosym)
     :type  password: Union(str, None)
@@ -50,7 +50,7 @@ def password_validate_local(username=None, password=None):
     """
     valid = "Incorrect username or password"
     if not username:
-        username = os.getenv('USERNAME', '')
+        username = os.getenv('USER', '')
     if not password:
         password = os.getenv('PASSWORD', '')
 
@@ -74,6 +74,4 @@ def password_validate_local(username=None, password=None):
 
 # ---------------------------
 if __name__ == '__main__':
-    user = os.getenv('USER')
-    pwd = password_plaintext(os.getenv('PASSWORD', ''))
-    print(password_validate_local(user, pwd))
+    print(password_validate_local(username=None, password=password_plaintext(os.getenv('PASSWORD', ''))))
