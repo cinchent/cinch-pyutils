@@ -1,7 +1,7 @@
 # -*- mode: python -*-
 # -*- coding: UTF-8 -*-
 #
-# Copyright (c) 2018-2022  CINCH Enterprises, Ltd.  See LICENSE.txt for terms.
+# Copyright (c) 2018-2023  CINCH Enterprises, Ltd.  See LICENSE.txt for terms.
 
 """
 Utilities to perform password authentication.

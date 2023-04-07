@@ -1,7 +1,7 @@
 # -*- mode: python -*-
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2020-2022  CINCH Enterprises, Ltd.  See LICENSE.txt for terms.
+# Copyright (c) 2020-2023  CINCH Enterprises, Ltd.  See LICENSE.txt for terms.
 
 """
 Utilities to support setuptools/pip installation.

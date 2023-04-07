@@ -1,7 +1,7 @@
 # -*- mode: python -*-
 # -*- coding: UTF-8 -*-
 #
-# Copyright (c) 2016-2022  CINCH Enterprises, Ltd.  See LICENSE.txt for terms.
+# Copyright (c) 2016-2023  CINCH Enterprises, Ltd.  See LICENSE.txt for terms.
 
 """ Importation helper functions. """
 import sys
@@ -123,17 +123,19 @@ def import_module(name, alias=None, within=None, cached=None):
     return module
 
 
-def import_module_source(modname, filespec, altpath=None, expand=True, execute=False):
+def import_module_source(modname, filespec=None, altpath=None, code=None, expand=True, execute=False):
     """
     Imports a module by source file, assuming it contains Python source code, irrespective of its file
     extension.
 
     :param modname:  Name of module under which to import source code
     :type  modname:  str
-    :param filespec: File specification for file containing Python source
-    :type  filespec: str
-    :param altpath:  Directory specification of an alternate path to search for `filespec`
-    :type  altpath:  str
+    :param filespec: File specification for file containing Python source (None => use `code`)
+    :type  filespec: Union(str, None)
+    :param altpath:  Directory specification of an alternate path to search for `filespec` (None => no alternate path)
+    :type  altpath:  Union(str, None)
+    :param code:     String containing source code to "import" as a module (None => import from `filespec`)
+    :type  code:     Union(str, None)
     :param expand:   "In case of importation failure, inserts sourced file(s) inline and substitutes values
                       for all symbol references expressed in a subset of shell parameter expansion notation."
     :type  expand:   bool
@@ -148,35 +150,53 @@ def import_module_source(modname, filespec, altpath=None, expand=True, execute=F
      * When both `expand` and `execute` are specified, expansion is attempted before execution.
     """
     try:
-        syspath = sys.path
-        if altpath:
-            syspath.append(str(altpath))
+        if filespec:
+            syspath = sys.path
+            if altpath:
+                syspath.append(str(altpath))
+        else:
+            syspath = []
         modfilespec = filespec
-        # noinspection PyTypeChecker
         for pathdir in [None] + syspath:
-            if pathdir:
-                modfilespec = Path(pathdir, filespec)
-            elif not Path(filespec).is_absolute():
-                continue
-            modfilespec = modfilespec.resolve()
-            loader = impmach.SourceFileLoader(modname, str(modfilespec))
-            module = imputil.module_from_spec(imputil.spec_from_loader(modname, loader))
-            try:
-                loader.exec_module(module)  # (load_module() deprecated)
-            except FileNotFoundError:
-                continue
-            except (SyntaxError, ImportError):  # (normal import failed)
+            error = None
+            if modfilespec:
+                if pathdir:
+                    modfilespec = Path(pathdir, filespec)
+                elif not Path(filespec).is_absolute():
+                    continue
+                modfilespec = modfilespec.resolve()
+                loader = impmach.SourceFileLoader(modname, str(modfilespec))
+                module = imputil.module_from_spec(imputil.spec_from_loader(modname, loader))
+                try:
+                    loader.exec_module(module)  # (load_module() deprecated)
+                except FileNotFoundError:
+                    continue
+                except (Exception, BaseException) as exc:
+                    error = exc
+            elif code:
+                spec = imputil.spec_from_loader(modname, None, origin='<string>')
+                module = imputil.module_from_spec(spec)
+                try:
+                    exec(code, vars(module))
+                except (Exception, BaseException) as exc:
+                    error = exc
+            else:
+                raise ImportError("'filespec' or 'code' must be specified")
+
+            if type(error) in (SyntaxError, ImportError):  # (normal import failed)
                 try:
                     if not expand:
                         raise
-                    define_script_vars(module, modfilespec)
+                    define_script_vars(module, modfilespec, content=code)
                 except (Exception, BaseException):  # (script expansion failed)
                     if not execute:
                         continue
                     try:
-                        execute_script_vars(module, modfilespec)
+                        execute_script_vars(module, modfilespec, content=code)
                     except (Exception, BaseException):  # (script execution failed)
                         continue
+            elif error:
+                raise error from error
             sys.modules[modname] = module
             break
         else:  # (all paths exhausted)
@@ -187,15 +207,18 @@ def import_module_source(modname, filespec, altpath=None, expand=True, execute=F
 
 
 # pylint:disable=exec-used
-def define_script_vars(obj, filespec):
+def define_script_vars(obj, filespec, content=None):
     """
     Interprets a shell script containing variable definitions, expanding
     scripts referenced via `source` statements, performing shell variable
     substitutions, and assigning all variable definitions as object
     attributes.
     """
-    content = filespec.read_text()
-    srcdir = filespec.parent.resolve()
+    if content:
+        srcdir = ''
+    else:
+        content = filespec.read_text()
+        srcdir = filespec.parent.resolve()
     symdefs = {}
     while True:
         symdef = re.search(r"""\n(\w+)=(?P<q>['"])(.*?)(?P=q)\s*\n""", content)
@@ -220,7 +243,7 @@ def define_script_vars(obj, filespec):
     exec(symsubst(content, defaults={**symdefs, **obj.__dict__}), obj.__dict__)  # (substituted symbol definitions)
 
 
-def execute_script_vars(obj, filespec):
+def execute_script_vars(obj, filespec, content=None):
     """
     Executes a shell script, assigning all environment variable definitions
     it produces as object attributes.
@@ -228,12 +251,18 @@ def execute_script_vars(obj, filespec):
     exec_fd, exec_filespec = tempfile.mkstemp(suffix='.sh')
     try:
         with os.fdopen(exec_fd, 'wt') as exec_file:
-            exec_file.write(dedent("""\
-                #!/usr/bin/env bash
+            source_code = content
+            if not source_code:
+                helper_script = dedent("""\
                 pushd {} >/dev/null
                 set -a; source {} >/dev/null
-                env; popd >/dev/null
-                """).format(*os.path.split(str(filespec))))
+                popd >/dev/null
+                """).format(*os.path.split(str(filespec)))
+            exec_file.write(dedent(f"""\
+                #!/usr/bin/env bash
+                {source_code}
+                env
+                """))
         os.chmod(exec_filespec, 0o700)
         symdefs = subprocess.check_output([exec_filespec], shell=True, encoding='utf-8').split('\n')
         for symdef in symdefs:
