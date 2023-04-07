@@ -8,12 +8,14 @@ import re
 from pathlib import Path
 
 
-def parse_ssh_config(filespec='~/.ssh/config'):
+def parse_ssh_config(filespec='~/.ssh/config', content=None):
     """
     Parses the SSH configuration file into a collection of hosts and their SSH characteristics.
 
     :param filespec: File specification for SSH config file (None => use canonical system default)
     :type  filespec: Union(str, None)
+    :param content:  SSH configuration content (used intead of reading `filespec`)
+    :type  content:  Union(str, None)
 
     :return: Hosts and their SSH access characteristics
     :rtype:  dict
@@ -25,12 +27,13 @@ def parse_ssh_config(filespec='~/.ssh/config'):
      * The SSH configuration file is presumed to be compatible with OpenSSH formatting, and is in the default
        user-specific location unless overridden explicitly via the 'SSH_CONFIG_FILE' envirosym.
     """
-    try:
-        text = Path(filespec).expanduser().read_text()
-    except FileNotFoundError:
-        text = ''
+    if not content:
+        try:
+            content = Path(filespec).expanduser().read_text(encoding='utf-8')
+        except FileNotFoundError:
+            content = ''
     lines = [re.sub(r"^Host +", '\n\n', line.split('#')[0].strip(), flags=re.IGNORECASE)
-             for line in text.split('\n')
+             for line in content.split('\n')
              if line.strip() and not line.lstrip().startswith('#')]
     # noinspection PyTypeChecker
     hosts_text = dict(re.sub(r" +", ' ', line).split(';', maxsplit=1)

@@ -123,7 +123,7 @@ def import_module(name, alias=None, within=None, cached=None):
     return module
 
 
-def import_module_source(modname, filespec=None, altpath=None, code=None, expand=True, execute=False):
+def import_module_source(modname, filespec=None, altpath=None, code=None, expand=True, execute=False):  # noqa:C901
     """
     Imports a module by source file, assuming it contains Python source code, irrespective of its file
     extension.
@@ -177,6 +177,7 @@ def import_module_source(modname, filespec=None, altpath=None, code=None, expand
                 spec = imputil.spec_from_loader(modname, None, origin='<string>')
                 module = imputil.module_from_spec(spec)
                 try:
+                    # pylint:disable=exec-used
                     exec(code, vars(module))
                 except (Exception, BaseException) as exc:
                     error = exc
@@ -186,7 +187,7 @@ def import_module_source(modname, filespec=None, altpath=None, code=None, expand
             if type(error) in (SyntaxError, ImportError):  # (normal import failed)
                 try:
                     if not expand:
-                        raise
+                        raise error from error
                     define_script_vars(module, modfilespec, content=code)
                 except (Exception, BaseException):  # (script expansion failed)
                     if not execute:
@@ -253,7 +254,7 @@ def execute_script_vars(obj, filespec, content=None):
         with os.fdopen(exec_fd, 'wt') as exec_file:
             source_code = content
             if not source_code:
-                helper_script = dedent("""\
+                source_code = dedent("""\
                 pushd {} >/dev/null
                 set -a; source {} >/dev/null
                 popd >/dev/null
