@@ -207,6 +207,18 @@ def import_module_source(modname, filespec=None, altpath=None, code=None, expand
     return module
 
 
+def lookup_submodule(module, name):
+    """ Looks up a submodule of a specified module by name. """
+    name = name.split('.', maxsplit=1)[-1]
+    if module:
+        child, *subs = name.split('.', maxsplit=1)
+        if module.__name__ != child:
+            module = vars(module).get(child)
+        if module and subs:
+            module = lookup_submodule(module, name)
+    return module
+
+
 # pylint:disable=exec-used
 def define_script_vars(obj, filespec, content=None):
     """
@@ -440,8 +452,7 @@ def symsubst(text, environ=None, defaults=None, strict=False):  # noqa: C901
     return _subst_ref(text)
 
 
-# noqa: C901
-def apply_environ(obj, environ=None, expandsyms=True, expanduser=True, prefix=''):
+def apply_environ(obj, environ=None, expandsyms=True, expanduser=True, prefix=''):  # noqa: C901
     # noinspection SpellCheckingInspection
     """
         Overrides each data attribute of an object with the corresponding
