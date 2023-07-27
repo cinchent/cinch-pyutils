@@ -92,9 +92,8 @@ class OmniDict(SimpleNamespace, dict):
         delattr(self, self._index(item))
 
     def __eq__(self, other):
-        return (len(self) == len(other) and
-                list(self.keys()) == list(other.keys()) and
-                all(self[k] == other[k] for k in self.keys()))
+        return (isinstance(other, dict) and len(self) == len(other) and
+                list(self.keys()) == list(other.keys()) and all(self[k] == other[k] for k in self.keys()))
 
     def __ne__(self, other):
         return not self.__eq__(other)
