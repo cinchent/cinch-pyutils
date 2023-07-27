@@ -4,17 +4,36 @@
 # Copyright (c) 2016-2023  CINCH Enterprises, Ltd.  See LICENSE.txt for terms.
 
 """
-Utilities to provide extensions to native Python container data types extending
-native Python data types and those in the standard Python collections package.
+Utilities to provide extensions to native Python container data types and those in the standard Python
+'collections' package.
 """
 
-from types import SimpleNamespace
+from itertools import chain
 
 
-class OmniDict(SimpleNamespace):
+class SimpleNamespace:  # (types.SimpleNamespace is incompatible)
+    """ Simple data class. """
+    def __init__(self, *members, **supplmembs):
+        """ Initialize from a dictionary as a single positional parameter and/or keyword parameters. """
+        for k, v in chain((members[0] if members else {}).items(), supplmembs.items()):
+            setattr(self, k, v)
+
+    def __repr__(self):
+        """ String formatter: enumerate attributes/values. """
+        return f"""{self.__class__.__name__}({', '.join(f"{k}={repr(v)}" for k, v in self.__dict__.items())})"""
+
+    def __bool__(self):
+        """ Consider namespace instance empty if it contains no data members. """
+        return bool(self.__dict__)
+
+
+class OmniDict(SimpleNamespace, dict):
     """
     Omnibus class whose instance objects contain members accessible/assignable by attribute (dot notation),
     named index, or numeric index.
+
+    .. note::
+     * This *is* a dict, but augmented with object-like and list-like properties.
     """
     def __init__(self, *members, _origin=0, **supplmembs):
         """
@@ -30,16 +49,20 @@ class OmniDict(SimpleNamespace):
          * `members` (if specified) precede `supplmembs` in assignment ordering.
         """
         self._origin = _origin
-        super().__init__(**{**(members[0] if members else {}), **supplmembs})
+        super().__init__(*members, **supplmembs)
 
     def __getattribute__(self, attr):
         """ Override: Excludes internal variable(s) from __dict__ retrieval. """
         return ({k: v for k, v in object.__getattribute__(self, attr).items() if k != '_origin'}
                 if attr == '__dict__' else object.__getattribute__(self, attr))
 
-    # def __repr__(self):
-    #     """ Representation formatter: exclude internal member(s). """
-    #     return SimpleNamespace.__repr__(self)
+    def __repr__(self):
+        """ Representation formatter: exclude internal member(s). """
+        return f"{self.__class__.__name__}({self.__dict__})"
+
+    def __str__(self):
+        """ String formatter: exclude internal member(s). """
+        return str(self.__dict__)
 
     def __len__(self):
         """ Returns number of defined object members. """
@@ -67,6 +90,14 @@ class OmniDict(SimpleNamespace):
     def __delitem__(self, item):
         """ Removes a member by indexing. """
         delattr(self, self._index(item))
+
+    def __eq__(self, other):
+        return (len(self) == len(other) and
+                list(self.keys()) == list(other.keys()) and
+                all(self[k] == other[k] for k in self.keys()))
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
     def _index(self, item):
         """ Internal method: performs numeric indexing within object; members are numbered in insertion order. """
