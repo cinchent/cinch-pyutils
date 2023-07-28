@@ -9,6 +9,7 @@ Utilities to provide extensions to native Python container data types and those 
 """
 
 from itertools import chain
+from collections.abc import Mapping
 
 
 class SimpleNamespace:  # (types.SimpleNamespace is incompatible)
@@ -27,7 +28,7 @@ class SimpleNamespace:  # (types.SimpleNamespace is incompatible)
         return bool(self.__dict__)
 
 
-class OmniDict(SimpleNamespace, dict):
+class OmniDict(SimpleNamespace, dict, Mapping):
     """
     Omnibus class whose instance objects contain members accessible/assignable by attribute (dot notation),
     named index, or numeric index.
@@ -97,6 +98,11 @@ class OmniDict(SimpleNamespace, dict):
 
     def __ne__(self, other):
         return not self.__eq__(other)
+
+    def __iter__(self):
+        """ Implements iterator for item iteration (e.g., using double-star operator). """
+        for elem in self.items():
+            yield elem
 
     def _index(self, item):
         """ Internal method: performs numeric indexing within object; members are numbered in insertion order. """
