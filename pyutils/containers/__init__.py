@@ -12,8 +12,14 @@ from itertools import chain
 from collections.abc import Mapping
 
 
-class SimpleNamespace:  # (types.SimpleNamespace is incompatible)
-    """ Simple data class. """
+class SimpleNamespace:
+    """
+    Simple data class.
+
+    .. note::
+     * Differs from `types.SimpleNamespace` in that an instance of this class is considered empty
+       if it contains no members (i.e., bool(types.SimpleNamespace()) is always True)
+    """
     def __init__(self, *members, **supplmembs):
         """ Initialize from a dictionary as a single positional parameter and/or keyword parameters. """
         for k, v in chain((members[0] if members else {}).items(), supplmembs.items()):
@@ -159,10 +165,11 @@ class OmniDict(SimpleNamespace, dict, Mapping):
         """
         return object.__getattribute__(self, '__dict__').popitem()
 
-    def update(self, other):
+    def update(self, other, **kwother):
         """ Adds all members from specified collection into this class instance. """
-        for key, val in other.items():
-            self[key] = val
+        for obj in chain((other, kwother)):
+            for key, val in getattr(obj, '__dict__', obj).items():
+                self[key] = val
 
     def setdefault(self, *args):
         """
@@ -181,3 +188,29 @@ class OmniDict(SimpleNamespace, dict, Mapping):
         for key in keys:  # pylint:disable=not-an-iterable
             obj[key] = default
         return obj
+
+
+def dictify(obj):
+    """
+    Converts an object, and all nested objects it contains, to a dictionary, for non-simple objects.
+
+    ... note::
+     * A (sub-)object is converted to a dict iff it contains a __dict__ attribute; otherwise, it is unmodified.
+    """
+    def _dictify(_obj):
+        _dict = _obj = getattr(_obj, '__dict__', _obj)
+        if isinstance(_obj, dict):
+            _dict = {}
+            for _key, _val in _obj.items():
+                _dict[_key] = _dictify(_val)
+        return _dict
+
+    return _dictify(obj)
+
+
+if __name__ == '__main__':
+    xyz = OmniDict(a=1, b='xyz', c=None)
+    xyz.update(OmniDict(k1='K1', a=2), k2='k2', k3='k3', k1='k1')
+    sn = SimpleNamespace(abc=123, xyz=xyz, ssn=SimpleNamespace())
+    dsn = dictify(sn)
+    print(dsn)
