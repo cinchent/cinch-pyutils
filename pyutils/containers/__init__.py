@@ -192,24 +192,25 @@ class OmniDict(SimpleNamespace, dict, Mapping):
 
 def dictify(obj):
     """
-    Converts an object, and all nested objects it contains, to a dictionary, for non-simple objects.
+    Converts an object, and all nested subobjects it contains, to a dictionaries, for non-simple objects.
 
-    ... note::
-     * A (sub-)object is converted to a dict iff it contains a __dict__ attribute; otherwise, it is unmodified.
+    .. note::
+     * Each (sub-)object is converted to a dict iff it contains a __dict__ attribute; otherwise, it is invariant.
+     * WARNING: This function uses recursion internally.
     """
     def _dictify(_obj):
-        _dict = _obj = getattr(_obj, '__dict__', _obj)
+        _out = _obj = getattr(_obj, '__dict__', _obj)
         if isinstance(_obj, dict):
-            _dict = {}
-            for _key, _val in _obj.items():
-                _dict[_key] = _dictify(_val)
-        return _dict
+            _out = {_key: _dictify(_val) for _key, _val in _obj.items()}
+        elif isinstance(_obj, (list, tuple)):
+            _out = (type(_obj))(_dictify(_val) for _val in _obj)
+        return _out
 
     return _dictify(obj)
 
 
 if __name__ == '__main__':
-    xyz = OmniDict(a=1, b='xyz', c=None)
+    xyz = OmniDict(a=1, b='xyz', c=None, dl=(OmniDict(xx='f', xy='m'),))
     xyz.update(OmniDict(k1='K1', a=2), k2='k2', k3='k3', k1='k1')
     sn = SimpleNamespace(abc=123, xyz=xyz, ssn=SimpleNamespace())
     dsn = dictify(sn)
