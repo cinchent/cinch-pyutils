@@ -10,6 +10,7 @@ Utilities to provide extensions to native Python container data types and those 
 
 from itertools import chain
 from collections.abc import Mapping
+from typing import Iterable
 
 
 class SimpleNamespace:
@@ -222,8 +223,8 @@ def dictify(obj, magic=False, private=True, pod=type(None)):
             _result = {_key: _dictify(_val) for _key, _val in _obj.items()
                        if ((not _key.startswith('_') or (magic if _key.startswith('__') else private)) and
                            _pod_subst(_val) is not default)}
-        elif isinstance(_obj, (list, tuple)):
-            _result = (type(_obj))(_dictify(_pod_subst(_val)) for _val in _obj)
+        elif isinstance(_obj, Iterable) and not isinstance(_obj, (str, bytes)):
+            _result = (tuple, list)[isinstance(_obj, list)](_dictify(_pod_subst(_val)) for _val in _obj)
         else:
             _result = _pod_subst(_obj)
         return _result
@@ -246,8 +247,9 @@ if __name__ == '__main__':
     xyz = OmniDict(a=1, b='xyz', c=None, dl=(OmniDict(xx='F', xy='M'),))
     xyz.update(OmniDict(k1='K1', a=2), k2='k2', k3='k3', k1='k1')
     sn = SimpleNamespace(abc=123, xyz=xyz, ssn=SimpleNamespace(), func=[dictify], nest=dict(func=lambda: None),
-                         cls=OmniDict, _priv=999, __xyz__=666)
+                         liter=iter([1, 2, 5]), cls=OmniDict, _priv=999, __xyz__=666)
     dsn = dictify(sn)
     print(dsn)
+    sn.liter = iter([1, 2, 5])
     dsn = dictify(sn, pod=(None, lambda v: None if callable(v) else v), private=False, magic=True)
     print(dsn)
