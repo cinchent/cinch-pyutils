@@ -22,8 +22,8 @@ class SimpleNamespace:
     """
     def __init__(self, *members, **supplmembs):
         """ Initialize from a dictionary as a single positional parameter and/or keyword parameters. """
-        for k, v in chain((members[0] if members else {}).items(), supplmembs.items()):
-            setattr(self, k, v)
+        for key, val in chain((members[0] if members else {}).items(), supplmembs.items()):
+            setattr(self, key, val)
 
     def __repr__(self):
         """ String formatter: enumerate attributes/values. """
@@ -100,7 +100,7 @@ class OmniDict(SimpleNamespace, dict, Mapping):
 
     def __eq__(self, other):
         return (isinstance(other, dict) and len(self) == len(other) and
-                list(self.keys()) == list(other.keys()) and all(self[k] == other[k] for k in self.keys()))
+                list(self.keys()) == list(other.keys()) and all(v == other[k] for k, v in self.items()))
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -190,28 +190,64 @@ class OmniDict(SimpleNamespace, dict, Mapping):
         return obj
 
 
-def dictify(obj):
+def dictify(obj, magic=False, private=True, pod=type(None)):
     """
-    Converts an object, and all nested subobjects it contains, to a dictionaries, for non-simple objects.
+    Converts an object, and any/all nested subobjects it contains, to a deep dictionary repreentation of that object.
+
+    :param obj:     Object to convert
+    :param magic:   "Include "magic" (dunder) elements of (sub-)object(s) in result."
+    :type  magic:   bool
+    :param private: "Include "private" (name-prefixed with underscore) elements of (sub-)object(s) in result."
+    :type  private: bool
+    :param pod:     How to ensure "plain ol' data" result elements (Ellipsis => allow "non-data" elements) -- tuple:
+                     [0]: Sentinel value substituted for non-data list/tuple elements or simple values in result
+                          (non-data items are omitted from dictionaries)
+                     [1]: (optional) Single-argument callable to map a non-data element or simple value to a substitute
+                          value in result (unspecified => "non-data" defined as any callable value)
+    :type  pod:     Union(Iterable, Ellipsis)
+
+    :return: Deeply nested "dictionary representation" of `obj`: a native Python aggregation (dict/list/tuple) if `obj`
+             is not simple) or the (optionally POD-substituted) `obj` value itself if it is simple
 
     .. note::
+     * WARNING: This function uses recursion internally to convert `obj` and all its elements (if any) to a
+       deep dictionaty representation.
      * Each (sub-)object is converted to a dict iff it contains a __dict__ attribute; otherwise, it is invariant.
-     * WARNING: This function uses recursion internally.
     """
     def _dictify(_obj):
-        _out = _obj = getattr(_obj, '__dict__', _obj)
+        """ Dictifier: called recursively element-by-element to convert to suitable representation. """
+        if not hasattr(_obj, '__call__'):
+            _obj = getattr(_obj, '__dict__', _obj)
         if isinstance(_obj, dict):
-            _out = {_key: _dictify(_val) for _key, _val in _obj.items()}
+            _result = {_key: _dictify(_val) for _key, _val in _obj.items()
+                       if ((not _key.startswith('_') or (magic if _key.startswith('__') else private)) and
+                           _pod_subst(_val) is not default)}
         elif isinstance(_obj, (list, tuple)):
-            _out = (type(_obj))(_dictify(_val) for _val in _obj)
-        return _out
+            _result = (type(_obj))(_dictify(_pod_subst(_val)) for _val in _obj)
+        else:
+            _result = _pod_subst(_obj)
+        return _result
+
+    default, _pod_subst = NotImplemented, lambda _elem: _elem
+    if pod is not type(None):  # noqa:E721
+        try:
+            default, *_pod_subst = pod
+        except (Exception, BaseException):
+            default, _pod_subst = pod, None
+        _pod_subst = (_pod_subst[0] if _pod_subst else
+                      lambda _elem: _elem if hasattr(__builtins__, type(_elem).__name__) else default)
+        if not callable(_pod_subst):
+            raise TypeError("POD substitutor function is not callable")
 
     return _dictify(obj)
 
 
 if __name__ == '__main__':
-    xyz = OmniDict(a=1, b='xyz', c=None, dl=(OmniDict(xx='f', xy='m'),))
+    xyz = OmniDict(a=1, b='xyz', c=None, dl=(OmniDict(xx='F', xy='M'),))
     xyz.update(OmniDict(k1='K1', a=2), k2='k2', k3='k3', k1='k1')
-    sn = SimpleNamespace(abc=123, xyz=xyz, ssn=SimpleNamespace())
+    sn = SimpleNamespace(abc=123, xyz=xyz, ssn=SimpleNamespace(), func=[dictify], nest=dict(func=lambda: None),
+                         cls=OmniDict, _priv=999, __xyz__=666)
     dsn = dictify(sn)
+    print(dsn)
+    dsn = dictify(sn, pod=(None, lambda v: None if callable(v) else v), private=False, magic=True)
     print(dsn)
