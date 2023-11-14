@@ -30,7 +30,17 @@ except ImportError:  # (tolerate during 'pyutils' install only)
 
 from pyutils.cryptutils import (TextObfuscator, OBFUSCATOR_FILE, OBFUSKEY)
 
-GITHUB_ENTERPRISE_DOMAIN = os.getenv('GITHUB_ENTERPRISE_DOMAIN', 'github.com')  # GitHub Enterprise (GHE) domain
+# --- GitHub Enterprise Server (GHES):
+# GITHUB_ENTERPRISE_DOMAIN = os.getenv('GITHUB_ENTERPRISE_DOMAIN', 'github.comcast.com')  # GHES domain
+# GITHUB_ENTERPRISE_DOMAIN_API = ''  # GHES domain prefix for API
+# GITHUB_ENTERPRISE_API_BASE_PATH = '/api/v3/'  # GHES URL base path
+# GITHUB_ENTERPRISE_ACCEPT_HEADER = 'application/vnd.github.v3+json'  # GHES HTTP request Accept header
+# --- GitHub Enterprise Cloud (GHEC):
+GITHUB_ENTERPRISE_DOMAIN = os.getenv('GITHUB_ENTERPRISE_DOMAIN', 'github.com')  # GHEC domain
+GITHUB_ENTERPRISE_DOMAIN_API = 'api.'  # GHEC domain prefix for API
+GITHUB_ENTERPRISE_API_BASE_PATH = '/'  # GHEC URL base path
+GITHUB_ENTERPRISE_ACCEPT_HEADER = 'application/vnd.github+json'  # GHEC HTTP request Accept header
+# --- Common:
 GITHUB_ENTERPRISE_ORG = os.getenv('GITHUB_ENTERPRISE_ORG', 'cinchent')          # GitHub Enterprise (GHE) org
 GITHUB_TOKEN_FILE = os.getenv('GITHUB_TOKEN_FILE', '~/.github-token')  # File containing GHE Personal Access Token (PAT)
 GITHUB_TOKEN_ENVIROSYM = 'GITHUB_TOKEN'                                # Envirosym specifying overriding GHE PAT
@@ -411,9 +421,10 @@ def _get_repo_content(reponame, repopath, basepath, org, ref, caches, try_github
 
     # Try searching GitHub (unless told not to) if content was not found in any repo cache.
     if not content and try_github:
-        url = f"https://{GITHUB_ENTERPRISE_DOMAIN}/api/v3/repos/{org}/{reponame}/contents/{pathname}?ref={ref}"
+        url = (f"https://{GITHUB_ENTERPRISE_DOMAIN_API}{GITHUB_ENTERPRISE_DOMAIN}{GITHUB_ENTERPRISE_API_BASE_PATH}"
+               f"repos/{org}/{reponame}/contents/{pathname}?ref={ref}")
         token = get_token() or ''
-        resp = requests.get(url, headers=dict(Accept="application/vnd.github.v3+json", Authorization=f"token {token}"),
+        resp = requests.get(url, headers=dict(Accept=GITHUB_ENTERPRISE_ACCEPT_HEADER, Authorization=f"token {token}"),
                             timeout=timeout)
         metadata = resp.json()
         if resp.status_code != HTTPStatus.OK:
