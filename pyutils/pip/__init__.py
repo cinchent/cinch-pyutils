@@ -37,7 +37,7 @@ except ImportError:
     except ImportError:
         pip = pip_main = None  # pylint:disable=invalid-name
 
-from pyutils.git import (get_token, url_add_auth, url_parse, deploy_repo)  # pylint:disable=wrong-import-position
+from pyutils.git import (url_reformat, deploy_repo)  # pylint:disable=wrong-import-position
 
 ERROR_LOG = lambda *a, **k: print(*a, file=sys.stderr, **k)  # noqa:E731
 
@@ -105,7 +105,7 @@ def get_package_dir(pkgname):
     return Path(location) if location else None
 
 
-def read_requirements(filespec='.', external=False, internal=True, packages=False, urls=True, auth=None):
+def read_requirements(filespec='.', external=False, internal=True, packages=False, urls=True, scheme=None, creds=None):
     """
     Reads pip requirements file(s), and extracts all requirement lines.
 
@@ -120,11 +120,13 @@ def read_requirements(filespec='.', external=False, internal=True, packages=Fals
     :type  packages: bool
     :param urls:     "Return URLs for 'external' requirements before requirement specifications."
     :type  urls:     bool
-    :param auth:     Authorization for access to external repos:
-                       * 'ssh' => use GitHub SSH access
-                       * Username and password/token (pair or colon-separated string) => Auth for GitHub http access
+    :param scheme:   Scheme by which to represent repo URLs; see :function:`pyutils.git.url_reformat()`
+                     (None => use URLs as specified, unmodified)
+    :type  scheme:   Union(str, None)
+    :param creds:    Credentials for access to external repos (tuple or colon-delimited string):
+                       * Username and/or password/GitHub PAT; see :function:`pyutils.git.url_reformat()`
                        * None => use URL as specified, unmodified
-    :type  auth:     Union(Iterable, None)
+    :type  creds:    Union(Iterable, None)
 
     :return: All package requirements
     :rtype:  list
@@ -153,7 +155,7 @@ def read_requirements(filespec='.', external=False, internal=True, packages=Fals
                     package = Path(url).stem
                     ext_packages.append(package)
                     if urls:
-                        all_urls.append(url_add_auth(url, auth) if auth else url)
+                        all_urls.append(url_reformat(url, scheme=scheme, creds=creds)[0])
                     if not external:
                         package = ''
             else:
@@ -171,13 +173,13 @@ def read_requirements(filespec='.', external=False, internal=True, packages=Fals
 
 
 # pylint:disable=invalid-name
-def install_external_packages(package_urls, base_dir=None, reinstall=False, overwrite=True, auth=None):
+def install_external_packages(package_urls, base_dir=None, reinstall=False, overwrite=True, scheme=None, creds=None):
     """
     Process externally-installed packages separately (workaround for pip dependency links obsolescence).
 
-    :param package_urls: Collection of SSH-compatible logins or HTTP URLs identifying external packages to clone
-                         from an external repo and install; suffixed optionally with repo branch name
-                         (example: git@github.com:org/package.git@branch or https://github.com/dir/package.git@branch)
+    :param package_urls: Collection of GitHub-compatible URLs identifying external packages to clone from an external
+                         repo and install; suffixed optionally with repo branch name
+                         (example: git@github.com:org/package.git#branch or https://github.com/dir/package.git#branch)
     :type  package_urls: Iterable
     :param base_dir:     Base directory where to clone external dependency packages from GitHub
                          (None => use Python `site-packages` directory)
@@ -186,11 +188,13 @@ def install_external_packages(package_urls, base_dir=None, reinstall=False, over
     :type  reinstall:    bool
     :param overwrite:    "Overwrite any existing cloned external package directories."
     :type  overwrite:    bool
-    :param auth:         Authorization for access to external repos:
-                           * 'ssh' => use GitHub SSH access
-                           * Username and password/token (pair or colon-separated string) => Auth for GitHub http access
-                           * None => use URL as specified; for http(s) URLs, modified with GitHub auth (see note below)
-    :type  auth:         Union(Iterable, None)
+    :param scheme:       Scheme by which to authenticate to GitHub URLs; see :function:`pyutils.git.url_reformat()`
+                         (None => use URLs as specified, unmodified)
+    :type  scheme:       Union(str, None)
+    :param creds:        Credentials for access to external repos (tuple or colon-delimited string):
+                           * Username and/or password/GitHub PAT; see :function:`pyutils.git.url_reformat()`
+                           * None => use URL as specified, unmodified
+    :type  creds:        Union(Iterable, None)
 
     :return: "Successfully installed packages (or no package installation needed)."
     :rtype:  bool
@@ -205,16 +209,13 @@ def install_external_packages(package_urls, base_dir=None, reinstall=False, over
           version specifiers are then subsequently respected only if the corresponding package is also listed with
           those specifiers among the PyPA/local packages, but are not uninstalled if they found at that time to be
           non-conformant to those specifiers.
-
      * External packages are installed as "editable" pip packages.
      * When `base_dir` is unspecified, git cloning of external package is attempted first into any of the `site`
        user directories, then in the `site` system directories, until successful.
-     * When `auth` is unspecified, http(s) URLs will be altered to use the current username and the GitHub PAT
-       as authorization, where the PAT is retrieved according to `pyutils.git.get_token()`; note that any specification
-       of `auth` other than 'ssh' is insecure, as the git remote URLs will contain the PAT as plaintext.
     """
 
     # Find all editable packages installed.
+    # noinspection PyUnusedLocal
     installed = {}
     with suppress(Exception):
         output = run_pip('list --format columns --editable')
@@ -222,20 +223,17 @@ def install_external_packages(package_urls, base_dir=None, reinstall=False, over
 
     # Determine external packages to (re)install.
     reinstalls = {}
-    if not auth:
-        with suppress(Exception):
-            auth = (getpass.getuser(), get_token())
     for pkgurl in package_urls:
-        pkgname, pkgurl, branch = url_parse(pkgurl, auth=auth)
-        if not auth:
-            ERROR_LOG(f"WARNING: Unspecified GitHub auth, cannot install package '{pkgname}'")
+        pkgurl, urlparts = url_reformat(pkgurl, scheme=scheme, creds=creds)
+        pkgname = Path(urlparts.path.split('@')[0]).stem
+        branch = urlparts.fragment
         if reinstall or pkgname not in installed:
             reinstalls[pkgname] = (pkgurl, installed.get(pkgname), branch)
 
     # Determine where to install external packages.
     install_opts = []
     if not base_dir:
-        base_dir = os.getenv('EXT_PACKAGES_DIR')  # @@@ deprecated -- remove when setup.py converted everywhere
+        base_dir = os.getenv('EXT_PACKAGES_DIR')
     if not base_dir:
         base_dir = Path('.')
     if base_dir:
@@ -269,8 +267,8 @@ def install_external_packages(package_urls, base_dir=None, reinstall=False, over
         # Install the cloned package (may fail because 'pip' doesn't detect a successful installation during run).
         err = None
         try:
-            output = run_pip(['install', '--editable', pkgname], command_opts=install_opts)
-            # @@@ TODO: add --root-user-action=ignore when supported ubiquitously
+            _ = run_pip(['install', '--editable', pkgname], command_opts=install_opts)
+            # @@@ TODO: add --root-user-action=ignore when supported ubiquitously in pip (>= 21.x)
         except RuntimeError as exc:
             err = exc
         if err:
@@ -285,8 +283,8 @@ if __name__ == '__main__':
     # _ = get_package_dir('ea_pyutils')
     # from itertools import product
     # _reqfile = Path('~/Repo/ea_test_foundation/requirements.txt').expanduser()
-    # for _combo in product(*[(False, True)] * 4):
-    #     _params = dict(zip('urls packages internal external'.split(), _combo))
+    # for _combo in product(*[(False, True)] * 4, ('https', 'ssh'), ('', 'me:secret')):
+    #     _params = dict(zip('urls packages internal external scheme creds'.split(), _combo))
     #     print("----- {}:".format(' '.join([('='.join((k, str(v)))) for k, v in _params.items()])))
     #     _r = read_requirements(_reqfile, **_params)
     #     print(_r)

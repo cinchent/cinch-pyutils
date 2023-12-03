@@ -98,11 +98,25 @@ def setup(package_dir, requirements='.', supplemental_packages=(), external_pack
     :param supplemental_packages: Additional Python packages to find for installation (ignored if `packages` specified)
     :type  supplemental_packages: Iterable
     :param external_packages:     "Install external packages defined in `requirements`."
+                                  (subject to envirosym definitions -- see notes)
     :type  external_packages:     bool
     :param executables:           Scripts/files to manually change permissions on to executable post-installation
     :type  executables:           Iterable
     :param params:                Additional options to be passed through directly to setuptools.setup()
     :type  params:                dict
+
+    .. note::
+     * Envirosyms heeded:
+        - EXT_PACKAGES_REINSTALL => "(Re)install all external (non-PyPI/GitHub-resident) dependency packages."
+                                    (denoted by ## annotations in requirements.txt)
+        - EXT_PACKAGES_OVERWRITE => "Erase/overwrite external dependency package directories."
+                                    (else safeguard existing package directories)
+        - EXT_PACKAGES_DIR: Local base directory where all external dependency packages are installed into from GitHub
+                            (otherwise, Python `site` directories are used) as pip "editable" packages
+        - EXT_PACKAGES_AUTH: GitHub authentication scheme ('https' | 'ssh' | 'scp')
+        - EXT_PACKAGES_CREDS: colon-delimited username:password/PAT to use for GitHub credentials
+                              (see :function:`pyutils.git.url_reformat()` for how to use credential defaults)
+
     """
     package_dir = Path(package_dir).expanduser().resolve()
     if not package_dir.is_dir():
@@ -139,14 +153,15 @@ def setup(package_dir, requirements='.', supplemental_packages=(), external_pack
     if external_packages:
         ext_packages_dir = os.getenv('EXT_PACKAGES_DIR')
         ext_packages_auth = os.getenv('EXT_PACKAGES_AUTH')
+        ext_packages_creds = os.getenv('EXT_PACKAGES_CREDS')
         ext_package_urls = read_requirements(requirements, external=False, internal=False, urls=True,
-                                             auth=ext_packages_auth)
+                                             scheme=ext_packages_auth, creds=ext_packages_creds)
         ext_reinstall = truthy(os.getenv('EXT_PACKAGES_REINSTALL', True))  # pylint:disable=invalid-envvar-default
         ext_overwrite = truthy(os.getenv('EXT_PACKAGES_OVERWRITE', False))  # pylint:disable=invalid-envvar-default
 
         def install():
             install_external_packages(ext_package_urls, base_dir=ext_packages_dir, reinstall=ext_reinstall,
-                                      overwrite=ext_overwrite, auth=ext_packages_auth)
+                                      overwrite=ext_overwrite, scheme=ext_packages_auth, creds=ext_packages_creds)
 
         class Installer(_installer):
             """ pip installer hook """

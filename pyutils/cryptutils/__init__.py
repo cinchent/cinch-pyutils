@@ -24,7 +24,8 @@ try:
     # noinspection PyPackageRequirements
     from cryptography.hazmat.backends import default_backend as crypto_default_backend
 except ImportError:  # (tolerate during 'pyutils' install only)
-    getpass = crypto_serialization = rsa = crypto_default_backend = None
+    crypto_serialization = rsa = None
+    getpass = crypto_default_backend = lambda: None  # noqa:E731
 
 try:
     # noinspection PyPackageRequirements
@@ -238,7 +239,7 @@ class NumericObfuscator:
         """
         if 0 <= inp < 10 ** (width + 1):
             if pail is None:
-                # @@@@@ pail = random.randint(0, len(self.__pails) - 1)
+                # @@@ pail = random.randint(0, len(self.__pails) - 1)
                 pail = self.__twister.rand() % len(self.__pails)
             out = self._squash(self.__flip(
                 self._tuplify(inp, digits=self._hexits(width)), pail))
@@ -253,7 +254,7 @@ class NumericObfuscator:
         """
         Decodes a previously encoded integer to its original value.
 
-        :param inp:   Encoded integer (see :method:`encode()')
+        :param inp:   Encoded integer (see :method:`encode()`)
         :type  inp:   int
         :param meta:  Encoded metadata (None => extract from high-order
                       decimal digits of `inp`)

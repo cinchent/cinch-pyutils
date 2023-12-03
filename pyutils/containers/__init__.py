@@ -250,6 +250,6 @@ if __name__ == '__main__':
                          liter=iter([1, 2, 5]), cls=OmniDict, _priv=999, __xyz__=666)
     dsn = dictify(sn)
     print(dsn)
-    sn.liter = iter([1, 2, 5])
+    sn.liter = iter([1, 2, 5])  # pylint:disable=attribute-defined-outside-init
     dsn = dictify(sn, pod=(None, lambda v: None if callable(v) else v), private=False, magic=True)
     print(dsn)

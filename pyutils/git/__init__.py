@@ -3,7 +3,7 @@
 # Copyright (c) 2020-2023  CINCH Enterprises, Ltd.  See LICENSE.txt for terms.
 
 """
-Utilities to provide special functions for 'git' and 'GitHub' repositories.
+Utilities to provide special functions for `git` and GitHub repositories.
 """
 # pylint:disable=cyclic-import
 
@@ -12,7 +12,6 @@ import os
 from pathlib import Path
 from io import BytesIO
 from urllib.parse import (urlparse, urlunparse)
-from collections import namedtuple
 from http import HTTPStatus
 from base64 import b64decode
 from functools import lru_cache
@@ -30,24 +29,33 @@ except ImportError:  # (tolerate during 'pyutils' install only)
 
 from pyutils.cryptutils import (TextObfuscator, OBFUSCATOR_FILE, OBFUSKEY)
 
-# --- GitHub Enterprise Server (GHES):
-# GITHUB_ENTERPRISE_DOMAIN = os.getenv('GITHUB_ENTERPRISE_DOMAIN', 'github.comcast.com')  # GHES domain
-# GITHUB_ENTERPRISE_DOMAIN_API = ''  # GHES domain prefix for API
-# GITHUB_ENTERPRISE_API_BASE_PATH = '/api/v3/'  # GHES URL base path
-# GITHUB_ENTERPRISE_ACCEPT_HEADER = 'application/vnd.github.v3+json'  # GHES HTTP request Accept header
-# --- GitHub Enterprise Cloud (GHEC):
-GITHUB_ENTERPRISE_DOMAIN = os.getenv('GITHUB_ENTERPRISE_DOMAIN', 'github.com')  # GHEC domain
-GITHUB_ENTERPRISE_DOMAIN_API = 'api.'  # GHEC domain prefix for API
-GITHUB_ENTERPRISE_API_BASE_PATH = '/'  # GHEC URL base path
-GITHUB_ENTERPRISE_ACCEPT_HEADER = 'application/vnd.github+json'  # GHEC HTTP request Accept header
-# --- Common:
-GITHUB_ENTERPRISE_ORG = os.getenv('GITHUB_ENTERPRISE_ORG', 'cinchent')          # GitHub Enterprise (GHE) org
-GITHUB_TOKEN_FILE = os.getenv('GITHUB_TOKEN_FILE', '~/.github-token')  # File containing GHE Personal Access Token (PAT)
-GITHUB_TOKEN_ENVIROSYM = 'GITHUB_TOKEN'                                # Envirosym specifying overriding GHE PAT
-GITHUB_CACHES = os.getenv('GITHUB_CACHES', "pip")                      # Default repo caches
-#                                                                        remote example: ssh://example.com/home/user
-GITHUB_OBJECT_TYPES = ('file', 'dir', 'submodule')
-GITHUB_DEFAULT_BRANCH = 'main'                                         # Default repo branch
+# --- GitHub Enterprise:
+GHE = 'Cloud'
+# ------- GitHub Enterprise Cloud (GHEC):
+if GHE == 'Cloud':
+    GITHUB_ENTERPRISE_DOMAIN = os.getenv('GITHUB_ENTERPRISE_DOMAIN', 'github.com')
+    GITHUB_ENTERPRISE_DOMAIN_API = 'api.'  # GHEC domain prefix for API
+    GITHUB_ENTERPRISE_API_BASE_PATH = '/'  # GHEC URL base path
+    GITHUB_ENTERPRISE_ACCEPT_HEADER = 'application/vnd.github+json'     # HTTP request Accept header
+# ------- GitHub Enterprise Server (GHES):
+else:
+    GITHUB_ENTERPRISE_DOMAIN = os.getenv('GITHUB_ENTERPRISE_DOMAIN', 'github.comcast.com')
+    GITHUB_ENTERPRISE_DOMAIN_API = ''  # GHES domain prefix for API
+    GITHUB_ENTERPRISE_API_BASE_PATH = '/api/v3/'  # GHES URL base path
+    GITHUB_ENTERPRISE_ACCEPT_HEADER = 'application/vnd.github.v3+json'  # HTTP request Accept header
+
+GITHUB_ENTERPRISE_ORG = os.getenv('GITHUB_ENTERPRISE_ORG', 'cinchent')  # GitHub Enterprise (GHE) org
+# --- Common/Local:
+GITHUB_TOKEN_FILE = os.getenv('GITHUB_TOKEN_FILE', '~/.github-token')   # File with GHE Personal Access Token (PAT)
+GITHUB_TOKEN_ENVIROSYM = 'GITHUB_TOKEN'                                 # Envirosym specifying canonical GHE PAT
+GITHUB_CACHES = os.getenv('GITHUB_CACHES', "pip")                       # Default repo caches
+#                                                                         remote example: ssh://example.com/home/user
+GITHUB_OBJECT_TYPES = ('file', 'dir', 'submodule')                      # Repo content retrieval types supported
+GITHUB_URL_SCHEMES = ('http', 'https', 'ssh')                           # Supported GitHub URL schemes
+GITHUB_URL_SCHEMES_DEPRECATED = ('git', 'ftp', 'ftps')                  # Deprecated GitHub URL schemes
+GITHUB_DEFAULT_USERNAME = 'git'                                         # Default GitHub user
+GITHUB_DEFAULT_REPO_SUFFIX = 'git'                                      # Default GitHub repo URL path suffix
+GITHUB_DEFAULT_BRANCH = 'main'                                          # Default GitHub repo branch
 
 ERROR_LOG = lambda *a, **k: print(*a, file=sys.stderr, **k)  # noqa:E731
 
@@ -75,62 +83,141 @@ def get_token():
     return token
 
 
-def url_add_auth(url, auth):
+# pylint:disable=protected-access
+# noinspection PyProtectedMember
+def url_reformat(url, scheme=None, creds=None, suffix=None, ref=None):  # noqa:C901
     """
-    Adds username and password/token to a GitHub repository URL.
+    Reformats a GitHub repository URL to a canonical format of the specified URL scheme, optionally including
+    credentials and a "commit-ish" reference xpecification.
 
-    :param url:  Repository URL
-    :type  url:  str
-    :param auth: Authorization type or username and password/PAT for GitHub server: tuple or ':'-separated string
-                 ('ssh' => use SSH)
-    :type  auth: Iterable
+    :param url:     Repository URL
+    :type  url:     str
+    :param scheme:  Schema to reformat input URL to:
+                      'http[s]:' => standard URL format using http[s] scheme
+                      'ssh' => standard URL format using ssh scheme
+                      'scp' => no scheme, GitHub SSH "scp-like" format (i.e., `username`@`netloc`:`org`/`repo_path`)
+                      None => use scheme, if any, as specified in input URL (not validated)
+    :type  scheme:  Union(str, None)
+    :param creds:   Authorization username and/or password/PAT for GitHub server -- tuple or `;`-separated string,
+                    where tuple as (`username`, [`password_or_PAT`]), or string as:
+                      `username` => credentials have no password/PAT
+                      `username:` => use canonical PAT for credentials
+                      `:password_or_PAT` => use current username for credentials
+                      `:` => use current username and canonical PAT for credentials
+                      empty => remove credentials entirely (use 'git' for `scheme`=='scp') in output URL
+                      None => use creds, if any, as specified in input URL
+    :type  creds:   Union(Iterable, None)
+    :param suffix:  Suffix for URL path:
+                      str => use as suffix
+                      '.' => use default GitHub suffix
+                      empty => remove suffix from input URL
+                      None => use suffix, if any, as specified in input URL
+    :type  suffix:  Union(str, None)
+    :param ref:     Reference specification (i.e., branch/tag/commit) appended to URL with `#` delimiter:
+                      str => use as refspec
+                      empty => remove refspec from input URL
+                      None => use refspec, if any, as specified in input URL
+    :type  ref:     Union(string, None)
 
-    :return: Adjusted URL (None => error)
-    :rtype:  Union(str, None)
+    :return: Result tuple:
+              [0]: Reformatted URL (None => error: ill-formed input URL or param specification)
+              [1]: Parsed URL parts (all components empty in case of error)
+    :rtype:  tuple
+
+    .. note::
+     * See https://git-scm.com/docs/git-clone#_git_urls for supported git URL syntax.
+     * Deprecated schemas are still recognized as valid in the input URL, but will not be produced as an output URL
+       schema unless the `schema` parameter is specified as `None` (thus conserving the input schema).
+     * The prefixed `git+xxx` schema is recognized and handled in the input URL as if the prefix weren't present,
+       with the prefix prepended onto the output URL.
+     * URLs that include an explicit port number as part of the server netloc are accommodated, but will be ambiguous
+       when reformatting to an "scp-like" output URL.
+     * If a "canonical" PAT is used for GitHub credentials, it is retrieved from the envirosym identified by the
+       GITHUB_TOKEN_ENVIROSYM definition above, or failing that, from the (possibly obfuscated) text file as denoted
+       by the GITHUB_TOKEN_FILE definition above.
     """
-    if not isinstance(auth, str):
-        auth = ':'.join(auth)
-    if ':' in auth:
-        username, password = auth.split(':', maxsplit=1)
-        auth = ':'.join((username.strip() or getpass.getuser(), password.strip() or get_token()))
+    parts = urlparse(url)
     try:
-        parts = urlparse(url)
-        if auth == 'ssh':
-            url = urlunparse(parts._replace(scheme='ssh', netloc='@'.join(('git', parts.netloc))))
+        scheme_sep = '://'
+        prefix_sep = '+'
+
+        # Special case: "file" scheme URL is passed through unmodified unless scheme change is erroneously attempted.
+        if parts.scheme == 'file':
+            raise (StopIteration() if not scheme or scheme == 'file' else TypeError("cannot reformat to file scheme"))
+
+        # Standardize specified URL components and validate against deprecated output schemes.
+        if not parts.netloc:  # (special case: parsing failed for "scp-like" scheme)
+            parts = urlparse(scheme_sep.join(('scp', url)))  # (use "scp" as a pseudo-scheme to correct parsing)
+            parts = parts._replace(**dict(zip(('netloc', 'path'), (parts.netloc + parts.path).rsplit(':', maxsplit=1))))
+
+        # Determine scheme prefix.
+        prefix, unprefixed_scheme = (prefix_sep + (scheme or parts.scheme)).rsplit(prefix_sep, maxsplit=1)
+        prefix = (prefix + prefix_sep).lstrip(prefix_sep)
+        if scheme and not scheme.startswith(prefix):  # (ignore prefix unless conserving scheme)
+            prefix = ''
+        if prefix and parts.scheme.startswith(prefix):
+            parts = parts._replace(scheme=unprefixed_scheme)
+
+        if scheme:
+            scheme = unprefixed_scheme.lower()
+            if scheme in GITHUB_URL_SCHEMES_DEPRECATED:
+                raise TypeError("deprecated scheme")
         else:
-            url = urlunparse(parts._replace(netloc='@'.join((auth, parts.netloc))))
+            scheme = parts.scheme
+
+        # Extract and/or substitute defaults for credentials:
+        orig_creds, netloc = ('@' + parts.netloc).rsplit('@', maxsplit=1)
+        if creds is None:
+            creds = orig_creds.lstrip('@')
+            if scheme in ('http', 'https') and creds == GITHUB_DEFAULT_USERNAME:
+                creds = ''
+        elif creds:
+            if not isinstance(creds, str):
+                creds = ':'.join(creds)
+            if ':' in creds:
+                username, password = creds.split(':', maxsplit=1)
+                creds = ':'.join((username.strip() or getpass.getuser(), password.strip() or get_token()))
+        if scheme not in ('http', 'https') and not creds:
+            creds = GITHUB_DEFAULT_USERNAME  # automatically use default username unless reformatting to http[s] scheme
+
+        netloc = '@'.join((creds, parts.netloc.split('@')[-1])[not creds:])
+
+        # Determine reference specification for output URL.
+        if ref is None:
+            ref = parts.fragment
+
+        # Add/remove/alter path suffix.
+        if suffix is not None:
+            suffix = ('.' + GITHUB_DEFAULT_REPO_SUFFIX if suffix == '.' else
+                      '.'[not suffix or suffix.startswith('.'):] + suffix)
+            parts = parts._replace(path=str(Path(parts.path).with_suffix(suffix)))
+
+        # ---- Format SSH-like scheme:
+        if scheme in ('ssh', 'scp'):
+            parts = parts._replace(scheme=scheme.split('scp')[0], netloc=netloc,
+                                   path='/:'[scheme == 'scp'] + parts.path.lstrip('/:'),
+                                   fragment=ref)
+            url = urlunparse(parts).lstrip('/')
+            if scheme == 'scp':  # (special case: eliminate path separator automatically inserted by unparse())
+                url = url.replace('/:', ':')
+
+        # ---- Format HTTP-like scheme:
+        elif scheme in ('http', 'https') + GITHUB_URL_SCHEMES_DEPRECATED:
+            parts = parts._replace(scheme=scheme, netloc=netloc, fragment=ref)
+            url = urlunparse(parts)
+
+        # ---- (unknown)
+        else:
+            raise ValueError("unrecognized scheme")
+
+        # Apply scheme prefix as applicable.
+        url = prefix + url
+    except StopIteration:
+        pass
     except (Exception, BaseException):  # pylint:disable=broad-except
-        # noinspection PyTypeChecker
-        url = None
-    return url
+        url, parts = None, urlparse('')
 
-
-GitHubURL = namedtuple('GitHubURL', 'name path branch')
-
-
-def url_parse(url, auth=None):
-    """
-    Parses a GitHub repository URL, optionally modifying it to add authorization info.
-
-    :param url:  Repository URL
-    :type  url:  str
-    :param auth: Authorization type or username and password/PAT for GitHub server: tuple or ':'-separated string
-                 ('ssh' => use SSH); None => no auth specified
-    :type  auth: Union(Iterable, None)
-
-    :return: Parsed URL result, optionally modified to incorporate authorization additions
-    :rtype:  GitHubURL
-    """
-    parts = urlparse(url.lstrip('git@'))
-    _, *branch = parts.path.rsplit('@', maxsplit=1)
-    # noinspection PyTypeChecker
-    repo_name = Path(parts.path.split('@')[0]).stem
-    if branch:
-        branch = branch[0]
-        url = url.rstrip('@' + branch)
-    if auth and '@' not in parts.netloc:
-        url = url_add_auth(url, auth)
-    return GitHubURL(repo_name, url, branch or None)
+    return url, parts
 
 
 # pylint:disable=invalid-name
@@ -357,13 +444,13 @@ def _get_repo_content_cached(reponame, repopath, ref, caches, maxdepth=-1):
 
         else:  # (try from specified URL)
             url_parts = urlparse(cache)
-            if url_parts.scheme == 'file':  # (HTTP file URL schema)
+            if url_parts.scheme == 'file':  # (HTTP file URL scheme)
                 foundpath = Path(url_parts.netloc).expanduser().joinpath(url_parts.path[bool(url_parts.netloc):])
                 if not foundpath.is_absolute():
                     foundpath = None
                 fulltree = False
 
-            else:  # (all other HTTP URL schemas)
+            else:  # (all other HTTP URL schemes)
                 foundpath = None
                 # noinspection PyProtectedMember
                 url = urlunparse(url_parts._replace(path=Path(url_parts.path, reponame).as_posix()))
@@ -461,7 +548,7 @@ def _get_repo_content(reponame, repopath, basepath, org, ref, caches, try_github
 
 if __name__ == '__main__':
     # # Unit test-ish:
-    this_repo = 'cinchent-pyutils'
+    this_repo = 'cinch-pyutils'
     # _token = get_token()
     # _dir = get_package_dir(this_repo)
     # _file = get_repo_file(this_repo, 'pyutils/git/__init__.py')
@@ -477,3 +564,184 @@ if __name__ == '__main__':
     # _files = get_repo_dir(this_repo, '', flat=True, maxdepth=-1)
     # _files = get_repo_dir(this_repo, '', flat=True, maxdepth=-1, caches=None)
     # _files = get_repo_dir(this_repo, '', maxdepth=2)
+
+    # _valid = True
+    # _valid &= (url_reformat("ssh://github.com/org/repo.git")[0] ==
+    #            'ssh://git@github.com/org/repo.git')
+    # _valid &= (url_reformat("ssh://github.com/org/repo.git", scheme='https')[0] ==
+    #            'https://github.com/org/repo.git')
+    # _valid &= (url_reformat("ssh://github.com/org/repo.git", scheme='https', creds='me:secret')[0] ==
+    #            'https://me:secret@github.com/org/repo.git')
+    # _valid &= (url_reformat("ssh://git@github.com/org/repo.git", scheme='https')[0] ==
+    #            'https://github.com/org/repo.git')
+    # _valid &= (url_reformat("ssh://git@github.com/org/repo.git", scheme='https', creds='me')[0] ==
+    #            'https://me@github.com/org/repo.git')
+    # _valid &= (url_reformat("ssh://git@github.com/org/repo.git", scheme='https', creds='me:')[0] ==
+    #            f'https://me:{get_token()}@github.com/org/repo.git')
+    # _valid &= (url_reformat("ssh://git@github.com/org/repo.git", scheme='https', creds=':secret')[0] ==
+    #            f'https://{getpass.getuser()}:secret@github.com/org/repo.git')
+    # _valid &= (url_reformat("ssh://me:other_secret@github.com/org/repo.git", scheme='https', creds=':secret')[0] ==
+    #            f'https://{getpass.getuser()}:secret@github.com/org/repo.git')
+    # _valid &= (url_reformat("ssh://me:other_secret@github.com/org/repo.git", scheme='https', creds=':')[0] ==
+    #            f'https://{getpass.getuser()}:{get_token()}@github.com/org/repo.git')
+    # _valid &= (url_reformat("ssh://me:secret@github.com/org/repo.git", scheme='https', creds='other_me')[0] ==
+    #            'https://other_me@github.com/org/repo.git')
+    # _valid &= (url_reformat("ssh://me:secret@github.com/org/repo.git", scheme='https', creds='')[0] ==
+    #            'https://github.com/org/repo.git')
+    # _valid &= (url_reformat("ssh://me:secret@github.com/org/repo.git", scheme='https', creds=None)[0] ==
+    #            'https://me:secret@github.com/org/repo.git')
+    # _valid &= (url_reformat("ssh://me:secret@github.com/org/repo.git", scheme='https', ref='main')[0] ==
+    #            'https://me:secret@github.com/org/repo.git#main')
+    # _valid &= (url_reformat("ssh://me:secret@github.com/org/repo.git#feature", scheme='https', ref='main')[0] ==
+    #            'https://me:secret@github.com/org/repo.git#main')
+    # _valid &= (url_reformat("ssh://me:secret@github.com/org/repo.git#feature", scheme='https', ref=None)[0] ==
+    #            'https://me:secret@github.com/org/repo.git#feature')
+    # _valid &= (url_reformat("ssh://me:secret@github.com/org/repo.git#feature", scheme='https', ref='')[0] ==
+    #            'https://me:secret@github.com/org/repo.git')
+    # # ---
+    # _valid &= (url_reformat("github.com:org/repo.git")[0] ==
+    #            'git@github.com:org/repo.git')
+    # _valid &= (url_reformat("github.com:org/repo.git", scheme='ssh')[0] ==
+    #            'ssh://git@github.com/org/repo.git')
+    # _valid &= (url_reformat("github.com:org/repo.git", scheme='ssh', creds='me:secret')[0] ==
+    #            'ssh://me:secret@github.com/org/repo.git')
+    # _valid &= (url_reformat("me@github.com:org/repo.git", scheme='ssh')[0] ==
+    #            'ssh://me@github.com/org/repo.git')
+    # _valid &= (url_reformat("git@github.com:org/repo.git", scheme='ssh')[0] ==
+    #            'ssh://git@github.com/org/repo.git')
+    # _valid &= (url_reformat("git@github.com:org/repo.git", scheme='ssh', creds='me')[0] ==
+    #            'ssh://me@github.com/org/repo.git')
+    # _valid &= (url_reformat("git@github.com:org/repo.git", scheme='ssh', creds='me:')[0] ==
+    #            f'ssh://me:{get_token()}@github.com/org/repo.git')
+    # _valid &= (url_reformat("git@github.com:org/repo.git", scheme='ssh', creds=':secret')[0] ==
+    #            f'ssh://{getpass.getuser()}:secret@github.com/org/repo.git')
+    # _valid &= (url_reformat("me:other_secret@github.com:org/repo.git", scheme='ssh', creds=':secret')[0] ==
+    #            f'ssh://{getpass.getuser()}:secret@github.com/org/repo.git')
+    # _valid &= (url_reformat("me:other_secret@github.com:org/repo.git", scheme='ssh', creds=':')[0] ==
+    #            f'ssh://{getpass.getuser()}:{get_token()}@github.com/org/repo.git')
+    # _valid &= (url_reformat("me:secret@github.com:org/repo.git", scheme='ssh', creds='other_me')[0] ==
+    #            'ssh://other_me@github.com/org/repo.git')
+    # _valid &= (url_reformat("me:secret@github.com:org/repo.git", scheme='ssh', creds='')[0] ==
+    #            'ssh://git@github.com/org/repo.git')
+    # _valid &= (url_reformat("me:secret@github.com:org/repo.git", scheme='ssh', creds=None)[0] ==
+    #            'ssh://me:secret@github.com/org/repo.git')
+    # _valid &= (url_reformat("me:secret@github.com:org/repo.git#feature", scheme='ssh', ref='main')[0] ==
+    #            'ssh://me:secret@github.com/org/repo.git#main')
+    # # ---
+    # _valid &= (url_reformat("github.com:org/repo.git", scheme='https')[0] ==
+    #            'https://github.com/org/repo.git')
+    # _valid &= (url_reformat("github.com:org/repo.git", scheme='https', creds='me:secret')[0] ==
+    #            'https://me:secret@github.com/org/repo.git')
+    # _valid &= (url_reformat("me@github.com:org/repo.git", scheme='https')[0] ==
+    #            'https://me@github.com/org/repo.git')
+    # _valid &= (url_reformat("git@github.com:org/repo.git", scheme='https')[0] ==
+    #            'https://github.com/org/repo.git')
+    # _valid &= (url_reformat("git@github.com:org/repo.git", scheme='https', creds='me')[0] ==
+    #            'https://me@github.com/org/repo.git')
+    # _valid &= (url_reformat("git@github.com:org/repo.git", scheme='https', creds='me:')[0] ==
+    #            f'https://me:{get_token()}@github.com/org/repo.git')
+    # _valid &= (url_reformat("git@github.com:org/repo.git", scheme='https', creds=':secret')[0] ==
+    #            f'https://{getpass.getuser()}:secret@github.com/org/repo.git')
+    # _valid &= (url_reformat("me:other_secret@github.com:org/repo.git", scheme='https', creds=':secret')[0] ==
+    #            f'https://{getpass.getuser()}:secret@github.com/org/repo.git')
+    # _valid &= (url_reformat("me:other_secret@github.com:org/repo.git", scheme='https', creds=':')[0] ==
+    #            f'https://{getpass.getuser()}:{get_token()}@github.com/org/repo.git')
+    # _valid &= (url_reformat("me:secret@github.com:org/repo.git", scheme='https', creds='other_me')[0] ==
+    #            'https://other_me@github.com/org/repo.git')
+    # _valid &= (url_reformat("me:secret@github.com:org/repo.git", scheme='https', creds='')[0] ==
+    #            'https://github.com/org/repo.git')
+    # _valid &= (url_reformat("me:secret@github.com:org/repo.git", scheme='https', creds=None)[0] ==
+    #            'https://me:secret@github.com/org/repo.git')
+    # _valid &= (url_reformat("me:secret@github.com:org/repo.git#feature", scheme='https', ref='main')[0] ==
+    #            'https://me:secret@github.com/org/repo.git#main')
+    # # ---
+    # _valid &= (url_reformat("https://github.com/org/repo.git")[0] ==
+    #            'https://github.com/org/repo.git')
+    # _valid &= (url_reformat("https://github.com/org/repo.git", scheme='ssh')[0] ==
+    #            'ssh://git@github.com/org/repo.git')
+    # _valid &= (url_reformat("https://github.com/org/repo", scheme='ssh')[0] ==
+    #            'ssh://git@github.com/org/repo')
+    # _valid &= (url_reformat("https://github.com/org/repo.git", scheme='ssh', creds='me:secret')[0] ==
+    #            'ssh://me:secret@github.com/org/repo.git')
+    # _valid &= (url_reformat("https://git@github.com/org/repo.git", scheme='ssh')[0] ==
+    #            'ssh://git@github.com/org/repo.git')
+    # _valid &= (url_reformat("https://git@github.com/org/repo.git", scheme='ssh', creds='me')[0] ==
+    #            'ssh://me@github.com/org/repo.git')
+    # _valid &= (url_reformat("https://git@github.com/org/repo.git", scheme='ssh', creds='me:')[0] ==
+    #            f'ssh://me:{get_token()}@github.com/org/repo.git')
+    # _valid &= (url_reformat("https://git@github.com/org/repo.git", scheme='ssh', creds=':secret')[0] ==
+    #            f'ssh://{getpass.getuser()}:secret@github.com/org/repo.git')
+    # _valid &= (url_reformat("https://me:other_secret@github.com/org/repo.git", scheme='ssh', creds=':secret')[0] ==
+    #            f'ssh://{getpass.getuser()}:secret@github.com/org/repo.git')
+    # _valid &= (url_reformat("https://me:other_secret@github.com/org/repo.git", scheme='ssh', creds=':')[0] ==
+    #            f'ssh://{getpass.getuser()}:{get_token()}@github.com/org/repo.git')
+    # _valid &= (url_reformat("https://me:secret@github.com/org/repo.git", scheme='ssh', creds='other_me')[0] ==
+    #            'ssh://other_me@github.com/org/repo.git')
+    # _valid &= (url_reformat("https://me:secret@github.com/org/repo.git", scheme='ssh', creds='')[0] ==
+    #            'ssh://git@github.com/org/repo.git')
+    # _valid &= (url_reformat("https://me:secret@github.com/org/repo.git", scheme='ssh', creds=None)[0] ==
+    #            'ssh://me:secret@github.com/org/repo.git')
+    # _valid &= (url_reformat("https://me:secret@github.com/org/repo.git#feature", scheme='ssh', ref='main')[0] ==
+    #            'ssh://me:secret@github.com/org/repo.git#main')
+    # # ---
+    # _valid &= (url_reformat("https://github.com/org/repo.git", scheme='scp')[0] ==
+    #            'git@github.com:org/repo.git')
+    # _valid &= (url_reformat("https://github.com/org/repo.git", scheme='scp', creds='me:secret')[0] ==
+    #            'me:secret@github.com:org/repo.git')
+    # _valid &= (url_reformat("https://git@github.com/org/repo.git", scheme='scp')[0] ==
+    #            'git@github.com:org/repo.git')
+    # _valid &= (url_reformat("https://git@github.com/org/repo.git", scheme='scp', creds='me')[0] ==
+    #            'me@github.com:org/repo.git')
+    # _valid &= (url_reformat("https://git@github.com/org/repo.git", scheme='scp', creds='me:')[0] ==
+    #            f'me:{get_token()}@github.com:org/repo.git')
+    # _valid &= (url_reformat("https://git@github.com/org/repo.git", scheme='scp', creds=':secret')[0] ==
+    #            f'{getpass.getuser()}:secret@github.com:org/repo.git')
+    # _valid &= (url_reformat("https://me:other_secret@github.com/org/repo.git", scheme='scp', creds=':secret')[0] ==
+    #            f'{getpass.getuser()}:secret@github.com:org/repo.git')
+    # _valid &= (url_reformat("https://me:other_secret@github.com/org/repo.git", scheme='scp', creds=':')[0] ==
+    #            f'{getpass.getuser()}:{get_token()}@github.com:org/repo.git')
+    # _valid &= (url_reformat("https://me:secret@github.com/org/repo.git", scheme='scp', creds='other_me')[0] ==
+    #            'other_me@github.com:org/repo.git')
+    # _valid &= (url_reformat("https://me:secret@github.com/org/repo.git", scheme='scp', creds='')[0] ==
+    #            'git@github.com:org/repo.git')
+    # _valid &= (url_reformat("https://me:secret@github.com/org/repo.git", scheme='scp', creds=None)[0] ==
+    #            'me:secret@github.com:org/repo.git')
+    # _valid &= (url_reformat("https://me:secret@github.com/org/repo.git#feature", scheme='scp', ref='main')[0] ==
+    #            'me:secret@github.com:org/repo.git#main')
+    # # ---
+    # _valid &= (url_reformat("http://github.com/org/repo.git", suffix='')[0] ==
+    #            'http://github.com/org/repo')
+    # _valid &= (url_reformat("http://github.com/org/repo", suffix='.git')[0] ==
+    #            'http://github.com/org/repo.git')
+    # _valid &= (url_reformat("http://github.com/org/repo.snarge", suffix='git')[0] ==
+    #            'http://github.com/org/repo.git')
+    # _valid &= (url_reformat("http://github.com/org/repo", suffix='.')[0] ==
+    #            'http://github.com/org/repo.git')
+    # _valid &= (url_reformat("http://github.com/org/repo.snarge", suffix='.')[0] ==
+    #            'http://github.com/org/repo.git')
+    # _valid &= (url_reformat("http://github.com/org/repo", scheme='ssh')[0] ==
+    #            'ssh://git@github.com/org/repo')
+    # _valid &= (url_reformat("https://github.com:443/org/repo.git", scheme='ssh')[0] ==
+    #            'ssh://git@github.com:443/org/repo.git')
+    # _valid &= (url_reformat("https://github.com:443/org/repo.git", scheme='scp')[0] ==
+    #            'git@github.com:443:org/repo.git')
+    # _valid &= (url_reformat("ssh://github.com:22/org/repo.git", scheme='https')[0] ==
+    #            'https://github.com:22/org/repo.git')
+    # _valid &= (url_reformat("file:///path/to/local/repo.git", scheme=None)[0] ==
+    #            'file:///path/to/local/repo.git')
+    # _valid &= (url_reformat("file:///path/to/local/repo.git", scheme='file', suffix='snarge')[0] ==
+    #            'file:///path/to/local/repo.git')
+    # _valid &= (url_reformat("git://github.com:8080/org/repo.git", scheme=None)[0] ==
+    #            'git://git@github.com:8080/org/repo.git')
+    # _valid &= (url_reformat("git+https://github.com:443/org/repo.git", scheme=None)[0] ==
+    #            'git+https://github.com:443/org/repo.git')
+    # _valid &= (url_reformat("git+ssh://github.com:22/org/repo.git", scheme=None)[0] ==
+    #            'git+ssh://git@github.com:22/org/repo.git')
+    # _valid &= (url_reformat("git+ssh://github.com:22/org/repo.git", scheme='ssh')[0] ==
+    #            'ssh://git@github.com:22/org/repo.git')
+    # _valid &= (url_reformat("http://github.com/org/repo.git", scheme='git+ssh')[0] ==
+    #            'git+ssh://git@github.com/org/repo.git')
+    # _valid &= (url_reformat("ssh://github.com/org/repo.git", scheme='git+http')[0] ==
+    #            'git+http://github.com/org/repo.git')
+    # _valid &= (url_reformat("me:my_pat@github.com:org/repo.git", scheme='git+https', suffix='', creds=':')[0] ==
+    #            f'git+https://{getpass.getuser()}:{get_token()}@github.com/org/repo')
