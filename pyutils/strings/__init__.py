@@ -7,6 +7,7 @@ Utilities to supplement native Python string processing.
 """
 import sys
 import json
+from contextlib import suppress
 import warnings
 try:
     with warnings.catch_warnings():
@@ -129,6 +130,13 @@ def truthy(value, truthstrs=None, strict=True):
     return truth
 
 
+def unquote(_str):
+    """
+    Strips any quotes surrounding text.
+    """
+    return _str.strip('"').strip("'")
+
+
 def isascii(_str):
     """
     Determines if a Unicode string is wholly composed of ASCII characters.
@@ -144,3 +152,11 @@ def isascii(_str):
 def bytestr(_str):
     """ Python 3 conditional bytes-to-string decoder. """
     return str(_str.decode()) if isinstance(_str, bytes) else _str
+
+
+def all_cases(striter):
+    """ Replicates each string in an iterable with a tuple of all its case variants. """
+    result = [tuple(getattr(c, m)() for m in 'capitalize upper lower'.split()) for c in striter]
+    with suppress(Exception):
+        result = type(striter)(result)
+    return result
