@@ -194,41 +194,48 @@ class OmniDict(SimpleNamespace, dict, Mapping):
         return obj
 
 
-def dictify(obj, magic=False, private=True, pod=type(None)):
+def dictify(obj, magic=False, private=True, pod=type(None), elemfilter=None):
     """
-    Converts an object, and any/all nested subobjects it contains, to a deep dictionary repreentation of that object.
+    Converts an object, and any/all nested subobjects it contains, to a deep dictionary representation of that object.
 
-    :param obj:     Object to convert
-    :param magic:   "Include "magic" (dunder) elements of (sub-)object(s) in result."
-    :type  magic:   bool
-    :param private: "Include "private" (name-prefixed with underscore) elements of (sub-)object(s) in result."
-    :type  private: bool
-    :param pod:     How to ensure result elements are all "plain ol' data" (Ellipsis => allow "non-data" elements) --
-                    tuple:
-                     [0]: Sentinel value substituted for non-data list/tuple elements or simple values in result
-                          (non-data items are omitted from dictionaries)
-                     [1]: (optional) Single-argument callable to map a non-data element or simple value to a substitute
-                          value in result (unspecified => "non-data" defined as any callable value)
-    :type  pod:     Union(Iterable, Ellipsis)
+    :param obj:        Object to convert
+    :param magic:      "Include "magic" (dunder) elements of (sub-)object(s) in result."
+    :type  magic:      bool
+    :param private:    "Include "private" (name-prefixed with underscore) elements of (sub-)object(s) in result."
+    :type  private:    bool
+    :param pod:        How to ensure result elements are all "plain ol' data" (Ellipsis => allow "non-data" elements) --
+                       tuple:
+                         [0]: Sentinel value substituted for non-data list/tuple elements or simple values in result
+                              (non-data items are omitted from dictionaries)
+                         [1]: (optional) Single-argument callable to map a non-data element or simple value to a
+                              substitute value in result (unspecified => "non-data" defined as any callable value)
+    :type  pod:        Union(Iterable, Ellipsis)
+    :param elemfilter: Single-argument callable taking an element value and returning the boolean "include this value." 
+    :type  elemfilter: Union(Callable, None) 
 
     :return: Deeply nested "dictionary representation" of `obj`: a native Python aggregation (dict/list/tuple) if `obj`
              is not simple) or the (optionally POD-substituted) `obj` value itself if it is simple
 
     .. note::
      * WARNING: This function uses recursion internally to convert `obj` and all its elements (if any) to a
-       deep dictionaty representation.
-     * Each (sub-)object is converted to a dict iff it contains a __dict__ attribute; otherwise, it is invariant.
+       deep dictionary representation; basic cycle detection is employed to prevent bottomless recursion.
+     * Each (sub-)object is converted to a dict iff it contains a `__dict__` attribute (provided it not a callable);
+       otherwise, it remains invariant.
     """
-    def _dictify(_obj):
+    def _dictify(_obj, _objmap):
         """ Dictifier: called recursively element-by-element to convert to suitable representation. """
-        if not hasattr(_obj, '__call__'):
+        if not hasattr(_obj, '__call__') and any(b.__name__ in __builtins__ for b in _obj.__class__.__bases__):
             _obj = getattr(_obj, '__dict__', _obj)
         if isinstance(_obj, dict):
-            _result = {_key: _dictify(_val) for _key, _val in _obj.items()
-                       if ((not _key.startswith('_') or (magic if _key.startswith('__') else private)) and
-                           _pod_subst(_val) is not default)}
+            _objmap.add(id(_obj))
+        if isinstance(_obj, dict):
+            _result = {_key: _dictify(_val, _objmap) for _key, _val in _obj.items()
+                       if (elemfilter(_val) and isinstance(_key, str) and
+                           (not _key.startswith('_') or (magic if _key.startswith('__') else private)) and
+                           id(_val) not in _objmap and _pod_subst(_val) is not default)}
         elif isinstance(_obj, Iterable) and not isinstance(_obj, (str, bytes)):
-            _result = (tuple, list)[isinstance(_obj, list)](_dictify(_pod_subst(_val)) for _val in _obj)
+            _result = (tuple, list)[isinstance(_obj, list)](_dictify(_pod_subst(_val), _objmap) for _val in _obj
+                                                            if elemfilter(_val))
         else:
             _result = _pod_subst(_obj)
         return _result
@@ -240,11 +247,14 @@ def dictify(obj, magic=False, private=True, pod=type(None)):
         except (Exception, BaseException):
             default, _pod_subst = pod, None
         _pod_subst = (_pod_subst[0] if _pod_subst else
-                      lambda _elem: _elem if hasattr(__builtins__, type(_elem).__name__) else default)
+                      lambda _elem: _elem if type(_elem).__name__ in __builtins__ else default)
         if not callable(_pod_subst):
             raise TypeError("POD substitutor function is not callable")
 
-    return _dictify(obj)
+    if not elemfilter:
+        elemfilter = lambda *_: True
+
+    return _dictify(obj, set())
 
 
 def objectify(_dict):
