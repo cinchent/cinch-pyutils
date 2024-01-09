@@ -210,8 +210,8 @@ def dictify(obj, magic=False, private=True, pod=type(None), elemfilter=None):
                          [1]: (optional) Single-argument callable to map a non-data element or simple value to a
                               substitute value in result (unspecified => "non-data" defined as any callable value)
     :type  pod:        Union(Iterable, Ellipsis)
-    :param elemfilter: Single-argument callable taking an element value and returning the boolean "include this value." 
-    :type  elemfilter: Union(Callable, None) 
+    :param elemfilter: Single-argument callable taking an element value and returning the boolean "include this value."
+    :type  elemfilter: Union(Callable, None)
 
     :return: Deeply nested "dictionary representation" of `obj`: a native Python aggregation (dict/list/tuple) if `obj`
              is not simple) or the (optionally POD-substituted) `obj` value itself if it is simple
@@ -252,7 +252,7 @@ def dictify(obj, magic=False, private=True, pod=type(None), elemfilter=None):
             raise TypeError("POD substitutor function is not callable")
 
     if not elemfilter:
-        elemfilter = lambda *_: True
+        elemfilter = lambda *_: True  # noqa:E731
 
     return _dictify(obj, set())
 

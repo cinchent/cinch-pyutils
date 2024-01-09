@@ -332,7 +332,7 @@ def generate_keys(keydir=None, keyfile_name=None, username=None, hostname=None):
     if not username:
         username = getpass.getuser()
     if not hostname:
-        hostname = socket.gethostname()
+        hostname = socket.gethostname()  # pylint:disable=no-member
 
     if keyfile_name:
         if keydir:

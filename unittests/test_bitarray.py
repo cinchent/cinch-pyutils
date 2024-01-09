@@ -112,7 +112,7 @@ def ba2hex(a):
         raise ValueError("bitarray length not multiple of 4")
 
     b = a.tobytes()
-    s = binascii.hexlify(b).decode()
+    s = binascii.hexlify(b).decode()  # pylint:disable=c-extension-no-member
     if len(a) % 8:
         s = s[:-1]
     return s
@@ -131,7 +131,7 @@ def hex2ba(s):
         s += '0' if isinstance(s, str) else b'0'
 
     a = bitarray(0)
-    b = binascii.unhexlify(s)
+    b = binascii.unhexlify(s)  # pylint:disable=c-extension-no-member
     a.frombytes(b)
 
     if strlen % 2:

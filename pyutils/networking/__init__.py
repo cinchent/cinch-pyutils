@@ -5,6 +5,8 @@
 """
 Utilities to supplement networking stack functions.
 """
+# pylint:disable=no-member # (many valid 'socket' members flagged)
+
 import socket
 from urllib.parse import urlparse
 import urllib.request
