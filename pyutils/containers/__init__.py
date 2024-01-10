@@ -14,7 +14,7 @@ from collections.abc import Mapping
 from collections import defaultdict
 from typing import Iterable
 from contextlib import suppress
-
+import builtins
 
 class SimpleNamespace:
     """
@@ -224,7 +224,7 @@ def dictify(obj, magic=False, private=True, pod=type(None), elemfilter=None):
     """
     def _dictify(_obj, _objmap):
         """ Dictifier: called recursively element-by-element to convert to suitable representation. """
-        if not hasattr(_obj, '__call__') and any(b.__name__ in __builtins__ for b in _obj.__class__.__bases__):
+        if not hasattr(_obj, '__call__') and any(b.__name__ in vars(builtins) for b in _obj.__class__.__bases__):
             _obj = getattr(_obj, '__dict__', _obj)
         if isinstance(_obj, dict):
             _objmap.add(id(_obj))
@@ -247,7 +247,7 @@ def dictify(obj, magic=False, private=True, pod=type(None), elemfilter=None):
         except (Exception, BaseException):
             default, _pod_subst = pod, None
         _pod_subst = (_pod_subst[0] if _pod_subst else
-                      lambda _elem: _elem if type(_elem).__name__ in __builtins__ else default)
+                      lambda _elem: _elem if type(_elem).__name__ in vars(builtins) else default)
         if not callable(_pod_subst):
             raise TypeError("POD substitutor function is not callable")
 
