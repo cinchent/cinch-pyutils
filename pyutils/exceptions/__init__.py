@@ -9,7 +9,7 @@ import sys
 import traceback
 import inspect
 import re
-from contextlib import (contextmanager, suppress)
+from contextlib import (contextmanager, suppress, AbstractContextManager)
 from collections import namedtuple
 ExceptionInfo = namedtuple('ExceptionInfo', 'type instance traceback'.split())
 CommonExceptionMessageFields = frozenset('message strerror reason'.split())
@@ -62,6 +62,37 @@ def try_raise(*args, exception=None):
         raise
 
 
+class TrapException(AbstractContextManager):
+    """
+    Context manager that traps and swallows any of a set of exception types
+    occurring in the context suite, indicating the failure, if any, outside
+    the context; non-trapped exceptions occurring in the suite are raised as
+    normal.
+
+    :param exceptions: Collection of exception types to trap
+    :type  exceptions: Iterable<Exception>
+
+    :return: Exception info tuple for trapped exception (None => none suffered)
+    :rtype:  Union[ExceptionInfo, None]
+
+    .. example::
+    >>> with TryException(ZeroDivisionError) as bad_div:
+    >>>     ...
+    >>>     1/0
+    >>> bad_div.trapped
+    ExceptionInfo(type=<class 'ZeroDivisionError'>, instance=ZeroDivisionError...
+    """
+    def __init__(self, exceptions=BaseException):
+        self.trapped = None
+        self.exceptions = ((exceptions,) if issubclass(exceptions, Exception)
+                           else exceptions)
+
+    def __exit__(self, exctype, value, _traceback):
+        if exctype in self.exceptions:
+            self.trapped = ExceptionInfo(exctype, value, _traceback)
+        return True
+
+
 def exception_message(exception):
     """
     Extractor for likeliest message text from an exception class object.
@@ -89,10 +120,6 @@ def exception_message(exception):
             message = exception.__class__.__name__
 
     return message
-
-
-class ExceptionString(str):
-    """ Thin cover for a string used to describe a thrown exception. """
 
 
 # noinspection GrazieInspection
@@ -126,10 +153,13 @@ def throw(exc_type, logmethod=None, message='', exception=None):
     >>> throw(TypeError, getLogger('').error, "dat ain' right")
     >>> class BadStringOperation(IndexError): pass
     >>> try:
-    >>>     _ = 'abc'[4]
+    >>>     _ = '123'[4]
     >>> except IndexError as exc:
     >>>     throw(BadStringOperation, getLogger('').warning, "wrong!", exc)
     """
+    class ExceptionString(str):
+        """ Thin cover for a string used to describe a thrown exception. """
+
     try:
         already_thrown = isinstance(exc_type.args[0], ExceptionString)
     except (Exception, BaseException):
@@ -151,13 +181,6 @@ def throw(exc_type, logmethod=None, message='', exception=None):
         raise exc_class(message) from exception
     # noinspection PyCallingNonCallable
     raise exc_class(message)
-
-
-class TracebackString(str):
-    """
-    Thin wrapper for a formatted traceback string, as returned by
-    `format_traceback()`, allowing it to be identified as such by a caller.
-    """
 
 
 def format_traceback(message='', stack=Exception):
@@ -186,6 +209,12 @@ def format_traceback(message='', stack=Exception):
     >>> traceback_str.split('''\n''')[-2]
     ZeroDivisionError: division by zero
     """
+    class TracebackString(str):
+        """
+        Thin wrapper for a formatted traceback string, as returned by
+        `format_traceback()`, allowing it to be identified as such by a caller.
+        """
+
     # noinspection PyUnusedLocal
     log_message = None
     with suppress(Exception):

@@ -16,6 +16,7 @@ from typing import Iterable
 from contextlib import suppress
 import builtins
 
+
 class SimpleNamespace:
     """
     Simple plain ol' data class.
