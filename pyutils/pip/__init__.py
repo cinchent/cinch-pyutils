@@ -26,6 +26,7 @@ except ImportError:  # (tolerate during 'pyutils' install only)
 try:
     import warnings
     warnings.filterwarnings('ignore', category=DeprecationWarning, module='pip._vendor.packaging.version')
+    warnings.filterwarnings("ignore", category=UserWarning, module="_distutils_hack")
     # noinspection PyPackageRequirements,PyProtectedMember
     from pip._internal.cli.main import main as pip_main  # pylint:disable=protected-access
 except ImportError:

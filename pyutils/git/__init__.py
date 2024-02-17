@@ -21,6 +21,11 @@ import shlex
 import zipfile
 
 try:
+    from git import Repo
+except ImportError:
+    Repo = None
+
+try:
     import getpass
     # noinspection PyPackageRequirements
     import requests
@@ -544,6 +549,24 @@ def _get_repo_content(reponame, repopath, basepath, org, ref, caches, try_github
                     _denote_subrepo(ent)
 
     return contype, content, fulltree
+
+
+def git_repo(path):
+    """ Accesses a locally cloned repo at a specific path. """
+    if not Repo:
+        raise NotImplementedError("GitPython package not installed")
+    return Repo(path)
+
+
+def git_repo_files(repo, file_type=None):
+    """ Retrieves the list of files of a particular type in a repo directory. """
+    if not Repo:
+        raise NotImplementedError("GitPython package not installed")
+    if file_type == 'untracked':
+        files = repo.untracked_files
+    else:
+        files = repo.git.ls_files().split('\n')
+    return files
 
 
 if __name__ == '__main__':

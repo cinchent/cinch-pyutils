@@ -130,6 +130,7 @@ def setup(package_dir, requirements='.', supplemental_packages=(), external_pack
         params.setdefault('download_url', url + f"/archive/{GITHUB_DEFAULT_BRANCH}.zip")
     with suppress(Exception):
         params.setdefault('name', Path(url).stem if url else package_dir.stem)
+    params['name'] = params.get('name', '').replace('_', '-')
     with suppress(Exception):
         params.setdefault('long_description', package_dir.joinpath('README.md').read_text(encoding='utf-8'))
     params.setdefault('long_description_content_type', 'text/markdown')

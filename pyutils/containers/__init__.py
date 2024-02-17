@@ -425,11 +425,25 @@ def nest(obj, sep='.'):
     return _deepcast(type(obj), _nest_node(obj))
 
 
-def flatten(obj, sep='.', prefix=''):
+def flatten(obj, sep='.', _prefix='', include_parent=False):
     """
     Flattens a possibly nested object tree or dictionary into a simple non-nested dictionary.
 
+    :param obj:            Object tree or dictionary containing a hierarchy of other (sub-)object trees/dictionaries
+    :type  obj:            Union[object, dict]
+    :param sep:            Name component separator for leaf item keys in flattened directory
+                           (None => use only leaf node name instead of delimited "breadcrumb" name)
+    :type  sep:            Union[str, None]
+    :param _prefix:        (internal use) Prefix for name components at this recursion level
+    :type  _prefix:        str
+    :param include_parent: "Also include in result (empty) parent nodes that contain subtrees."
+    :type  include_parent: bool
+
+    :return: Flattened dictionary representation of input object tree/dictionary
+    :rtype:  dict
+
     .. note::
+     * WARNING: Uses recursion to travers input object tree/dictionary.
      * For dictionaries keyed by identifiers, the resulting keys in the flattened directory are composed hierarchically
        by the specified delimiter `sep`, unless `sep` is specified as None.
      * Key conflicts that might occur within the hierarchy are resolved by later items (in traversal order) superseding
@@ -438,10 +452,12 @@ def flatten(obj, sep='.', prefix=''):
     result = {}
     _dict = getattr(obj, '__dict__', obj)
     for key, val in _dict.items():
-        fullkey = f"{prefix}{sep}{key}" if sep is not None and prefix else key
-        if isinstance(val, dict) or hasattr(val, '__dict__'):
-            result.update(flatten(val, sep=sep, prefix=fullkey))
-        else:
+        fullkey = f"{_prefix}{sep}{key}" if sep is not None and _prefix else key
+        is_subtree = val and (isinstance(val, dict) or hasattr(val, '__dict__'))
+        if is_subtree:
+            result.update(flatten(val, sep=sep, _prefix=fullkey, include_parent=include_parent))
+            val = {}
+        if not is_subtree or include_parent:
             result[fullkey] = val
     return result
 

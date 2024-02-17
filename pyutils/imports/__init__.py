@@ -4,6 +4,7 @@
 # Copyright (c) 2016-2023  CINCH Enterprises, Ltd.  See LICENSE.txt for terms.
 
 """ Importation helper functions. """
+import site
 import sys
 import os
 import re
@@ -22,12 +23,13 @@ import importlib.machinery as impmach
 import importlib.util as imputil
 import warnings
 
+import pkg_resources
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
+warnings.filterwarnings("ignore", category=UserWarning, module="_distutils_hack")
+
 try:
     from importlib.metadata import version as pkg_version
 except ImportError:
-    import pkg_resources
-    warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
-
     def pkg_version(pkg_name):
         """ Resolve installed package version (pre-importlib). """
         return pkg_resources.require(pkg_name)[0].version
@@ -76,13 +78,13 @@ def import_module(name, alias=None, within=None, cached=None):
     :param name:   Name of module to import (qualified within system path)
     :type  name:   str
     :param alias:  Module name alias
-    :type  alias:  Union(str, None)
+    :type  alias:  Union[str, None]
     :param within: Namespace/object/dict or module name within which to assign
                    `alias` or `name` (None => import only, no assignment)
-    :type  within: Union(Namespace, dict, str, None)
+    :type  within: Union[Namespace, dict, str, None]
     :param cached: Fully-qualified module name (in sys.modules) to (re)assign
                    with imported module (None => default cache assignments)
-    :type  cached: Union(str, None)
+    :type  cached: Union[str, None]
 
     :return: Imported module
     :rtype:  module
@@ -131,11 +133,11 @@ def import_module_source(modname, filespec=None, altpath=None, code=None, expand
     :param modname:  Name of module under which to import source code
     :type  modname:  str
     :param filespec: File specification for file containing Python source (None => use `code`)
-    :type  filespec: Union(str, None)
+    :type  filespec: Union[str, None]
     :param altpath:  Directory specification of an alternate path to search for `filespec` (None => no alternate path)
-    :type  altpath:  Union(str, None)
+    :type  altpath:  Union[str, None]
     :param code:     String containing source code to "import" as a module (None => import from `filespec`)
-    :type  code:     Union(str, None)
+    :type  code:     Union[str, None]
     :param expand:   "In case of importation failure, inserts sourced file(s) inline and substitutes values
                       for all symbol references expressed in a subset of shell parameter expansion notation."
     :type  expand:   bool
@@ -302,13 +304,13 @@ def import_extended(modname, objects=(), paths=(), default=NotImplemented):
                     specified as str > single name
                     (equivalent to "from `modname` import `objects`";
                      empty => "import `modname`")
-    :type  objects: Union(Iterable, str)
+    :type  objects: Union[Iterable, str]
     :param paths:   Collection of directory specifications to successively
                     append to Python system path: each may be a pathlib.Path
                     or anything convertible to a string;
                     specified as str => treated as a single path
                     (empty => no alternate path locations)
-    :type  paths:   Union(Iterable, str)
+    :type  paths:   Union[Iterable, str]
     :param default: On importation failure, any default value to use instead
                     of the module or each missing object (e.g., None or Mock)
                     (NotImplemented => propagate raised ImportError)
@@ -369,9 +371,9 @@ def symsubst(text, environ=None, defaults=None, strict=False):  # noqa: C901
     :param text:     Unsubstituted text to process
     :type  text:     str
     :param environ:  Environment to apply (None => use shell environment)
-    :type  environ:  Union(dict, None)
+    :type  environ:  Union[dict, None]
     :param defaults: Default symbol values to use if absent from `environ`
-    :type  defaults: Union(dict, None)
+    :type  defaults: Union[dict, None]
     :param strict:   "Disallow substitutions from undefined symbols."
     :type  strict:   bool
 
@@ -460,7 +462,7 @@ def apply_environ(obj, environ=None, expandsyms=True, expanduser=True, prefix=''
 
         :param obj:        Object to process (must be a dict or have a __dict__ member)
         :param environ:    Environment snapshot to apply (None => use shell environment)
-        :type  environ:    Union(dict, None)
+        :type  environ:    Union[dict, None]
         :param expandsyms: "Expand symbolic ${sym} and ${sym:-default} references."
         :type  expandsyms: bool
         :param expanduser: "Expand user home directory in (presumable) paths."
@@ -590,26 +592,85 @@ def isinstanceof(obj, cls, strict=False):
     return isinst
 
 
-def check_package_requirements(requirements_filespec, packages=None, ignore=None):
+def package_name(name, package_naming=True):
+    """
+    Returns the sppecified type of name associated with a package.
+
+    :param name:           Project name for a package
+    :type  name:           str
+    :param package_naming: "Return Python package name for a package."
+                           (otherwise the project name)
+    :type  package_naming: bool
+
+    :return: Package/project name
+    :rtype:  str
+
+    .. note::
+     * pip introduces the gratuitous abomination of "package name" vs.
+       "project name" tor each package: pip manages packages using the
+       "package name" (*usually* dash-only word separators), whereas Python
+       universally refers to package name (underscores as word-separators);
+       `package_naming` allows the caller to specify the context of the
+       naming scheme of interest for the result keys.
+    """
+    return name.replace(*('-', '_')[::+1 if package_naming else -1])
+
+
+def parse_package_requirements(reqs, package_naming=True):
+    """
+    Parses pip "frozen" requirements as specified by text or file.
+
+    :param req:            Requirements to parse
+                           (starts with '@' => filespec of requirements file)
+    :type  req:            Union[str, Path]
+    :param package_naming: "Use package names, not project names for keys."
+    :type  package_naming: bool
+
+    :return: Collection of package metadata for each requirement; keys are
+             project/package names, values are Requirement metadata
+    :rtype:  dict<str, requirements.requirement.Requirement>
+
+    .. note::
+     * See `package_name()` for more about `package_naming`.
+    """
+    if not requirements:
+        raise ModuleNotFoundError("'requirements-parser' package required")
+    if isinstance(reqs, Path) or reqs.startswith('@'):
+        reqs = (Path(str(reqs).lstrip('@')).expanduser()
+                .read_text(encoding='utf-8'))
+    return {package_name(p.name, package_naming=package_naming): p
+            for p in requirements.parse(reqs)}
+
+
+def check_package_requirements(reqs, packages=None, ignore=None,
+                               package_naming=True):
     """
     Checks that all imported packages in specified collection of packages
     conform to the package requirements.
 
-    :param requirements_filespec: Full file specification of requirements file
-    :type  requirements_filespec: Union(str, Path)
-    :param packages:              Names of packages to check
-                                  (None => all packages in requirements file)
-    :type  packages:              Union(Iterable, str, None)
-    :param ignore:                Names of packages to ignore checking for
-                                  (None => all packages specified by `packages`)
-    :type  ignore:                Union(Iterable, str, None)
+    :param req:            Requirements to parse
+                           (starts with '@' => filespec of requirements file)
+    :type  req:            Union[str, Path]
+    :param packages:       Names of packages to check
+                           (None => all packages in requirements file)
+    :type  packages:       Union[Iterable, str, None]
+    :param ignore:         Names of packages to ignore checking for
+                           (None => all packages specified by `packages`)
+    :type  ignore:         Union[Iterable, str, None]
+    :param package_naming: "Use package names, not project names to refer
+                            to packages."
+    :type  package_naming: bool
 
     :return: Packages failing the requirements (empty => all ok) --
              each key: package name, each value is namedtuple:
                .actual:   actual version number (None => unknown)
                .required: list of requirements parsed from requirements file
                           (empty: package undefined in requirements file)
-    :rtype:  dict
+    :rtype:  dict<str, namedtuple>
+
+    .. note::
+     * `package_naming` determines the name format of `packages` and `ignore`
+        (see note in `package_name()`)
     """
     if not requirements:
         raise ModuleNotFoundError("'requirements-parser' package required")
@@ -625,10 +686,7 @@ def check_package_requirements(requirements_filespec, packages=None, ignore=None
            '<=': '__le__',
            }
 
-    reqtext = Path(requirements_filespec).expanduser().read_text(encoding='utf-8')
-    # noinspection PyUnresolvedReferences
-    reqlist = {r.name.replace('-', '_'): r
-               for r in requirements.parse(reqtext)}
+    reqlist = parse_package_requirements(reqs, package_naming=package_naming)
 
     if packages is None:
         packages = list(reqlist)
@@ -641,22 +699,97 @@ def check_package_requirements(requirements_filespec, packages=None, ignore=None
         ignore = ignore.split()
 
     failed = {}
-    for package_name in packages:
-        if package_name in ignore:
+    for pkgname in packages:
+        if pkgname in ignore:
             continue
-        req = reqlist.get(package_name)
+        req = reqlist.get(pkgname)
         req = req.specs if req else []
         try:
-            actual = pkg_version(package_name)
+            actual = pkg_version(pkgname)
         except (Exception, BaseException):
             actual = None
         if not actual or not req:
-            failed[package_name] = package_mismatch(actual=actual, required=req)
+            failed[pkgname] = package_mismatch(actual=actual, required=req)
             continue
 
         if not all(getattr(operator, ops.get(op), lambda *_: False)
                    (Version(actual), Version(ver))
                    for (op, ver) in req):
-            failed[package_name] = package_mismatch(actual=actual, required=req)
+            failed[pkgname] = package_mismatch(actual=actual, required=req)
 
     return failed
+
+
+def get_installed_packages(package_types='all', package_naming=True):
+    """
+    Retrieves all pip-installed packages of the specified type(s).
+
+    :param package_types:  Type(s) of packages to include in result (list or
+                           space-delimited string) -- any of:
+                            * all      => All packages (supersedes all others)
+                            * system   => "site" (all-user) packages
+                            * user     => User-specific packages
+                            * editable => Packages installed as "editable"
+    :type  package_types:  Union[list, str]
+    :param package_naming: "Use package names, not project names for keys."
+    :type  package_naming: bool
+
+    :return: Collection of metadata objects for all installed packages of the
+             specified type(s), keys are "project name" of package metadata
+    :rtype:  dict<str, pkg_resources.Distribution>
+
+    .. note::
+     * See `package_name()` for more about `package_naming`.
+    """
+    if isinstance(package_types, str):
+        package_types = package_types.split()
+    package_types = [p.lower() for p in package_types]
+    sitepkgs = set()
+    allsite = set(site.getsitepackages()) | {site.getusersitepackages()}
+    if any(pt in package_types for pt in 'all system'.split()):
+        sitepkgs |= set(site.getsitepackages())
+    if any(pt in package_types for pt in 'all user'.split()):
+        sitepkgs.add(site.getusersitepackages())
+    editable = any(pt in package_types for pt in 'all editable'.split())
+    return {package_name(p.project_name, package_naming=package_naming): p
+            for p in pkg_resources.working_set  # pylint:disable=not-an-iterable
+            if editable and p.location not in allsite or p.location in sitepkgs}
+
+
+def build_dependencies(pkgname, dependencies=None, packages=None,
+                       package_naming=True):
+    """
+    Updates an (optional) existing package dependencies DAG for the contribution
+    due to a specified package, optionally limited to an applicable universe of
+    installed packages.
+
+    :param pkgname:        Name of package/project (see `package_naming`)
+    :type  pkgname:        str
+    :param dependencies:   Existing (known) dependencies, to which dependencies
+                           for `pkgname` contribute (None => none known yet)
+    :type  dependencies:   Union[dict<str, *>, None]
+    :param packages:       Universe of installed Python packages within which
+                           dependencies are applicable (None => all installed)
+    :type  packages:       Union[dict<str, pkg_resources.Distribution>, None]
+    :param package_naming: "Use package names, not project names to refer
+                            to packages."
+    :type  package_naming: bool
+
+    :return: Nested dictionary (DAG) cumulating dependencies from package
+             (leaf dictionaries are empty)
+    :rtype:  dict<str, dict>
+
+    .. note::
+     * See `package_name()` for more about `package_naming`.
+     * WARNING: DAG is constructed recursively here.
+    """
+    if packages is None:
+        packages = get_installed_packages(package_naming=package_naming)
+    dependencies = dependencies or {}
+    subreqs = {package_name(p.name, package_naming): None
+               for p in packages[pkgname].requires()
+               if package_name(p.name, package_naming) in packages}
+    dependencies[pkgname] = subreqs
+    for subname in subreqs:
+        build_dependencies(subname, subreqs, packages, package_naming)
+    return dependencies
