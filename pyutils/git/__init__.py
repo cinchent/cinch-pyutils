@@ -226,7 +226,7 @@ def url_reformat(url, scheme=None, creds=None, suffix=None, ref=None):  # noqa:C
 
 
 # pylint:disable=invalid-name
-def deploy_repo(base_dir, repo_name, url, branch=None, overwrite=False, **_):  # noqa:C901
+def deploy_repo(base_dir, repo_name, url, branch=None, overwrite=False, try_sudo=False, **_):  # noqa:C901
     """
     Acquires content of a repository in entirety from GitHub and deploys it on the local filesystem.
 
@@ -240,6 +240,8 @@ def deploy_repo(base_dir, repo_name, url, branch=None, overwrite=False, **_):  #
     :type  branch:    Union(str, None)
     :param overwrite: "Erase existing directory and install afresh if it exists."
     :type  overwrite: bool
+    :param try_sudo:  "Try using 'sudo' to acquire repo if acquisition as user fails."
+    :type  try_sudo:  bool
 
     :return: "Repository was deployed successfully."
     :rtype:  bool
@@ -256,17 +258,17 @@ def deploy_repo(base_dir, repo_name, url, branch=None, overwrite=False, **_):  #
             base_dir = Path(base_dir).expanduser().resolve()
             os.chdir(base_dir)
         except OSError as exc:
-            ERROR_LOG(f"ERROR: Access error for repository base directory '{base_dir}': {exc}\nCannot proceed")
+            ERROR_LOG(f"ERROR: Access error for repo base directory '{base_dir}': {exc}\nCannot proceed")
             ok = False
             break
 
         suffix = Path(urlparse(url).path).suffix
         if suffix not in ('.git', ''):
-            raise NotImplementedError(f"Unsupported repository acquisition type: '{suffix}'")
+            raise NotImplementedError(f"Unsupported repo acquisition type: '{suffix}'")
 
         # Delete target installation directory if it exists (unless safeguarded).
         if not overwrite and Path(repo_name).exists():
-            ERROR_LOG(f"ERROR: Repository target directory '{repo_name}' already exists, installing existing contents")
+            ERROR_LOG(f"WARNING: Repo target directory '{repo_name}' already exists, installing existing contents")
             ok = False
             break
         try:
@@ -280,21 +282,24 @@ def deploy_repo(base_dir, repo_name, url, branch=None, overwrite=False, **_):  #
             pass
         except OSError:
             try:
-                subprocess.run("sudo rm -rf {}".format(repo_name), shell=True, check=True)
+                if try_sudo:
+                    subprocess.run("sudo rm -rf {}".format(repo_name), shell=True, check=True)
+                else:
+                    raise
             except (Exception, BaseException) as exc:
                 err = str(exc)
         except (Exception, BaseException) as exc:
             err = str(exc)
         if err:
             ok = False
-            ERROR_LOG("ERROR: Failure deleting existing repository directory '{}': {}"
+            ERROR_LOG("ERROR: Failure deleting existing repo directory '{}': {}"
                       .format(Path(repo_name).resolve().absolute(), err))
             break
 
         # Clone the package repo/branch.
         if branch:
             branch = f"--branch {branch}"
-        for pfx in ('', 'sudo'):
+        for pfx in ('', 'sudo')[:1 + try_sudo]:
             try:
                 result = subprocess.run("{} git clone --recurse-submodules {} {} {}"
                                         .format(pfx, branch or '', url, repo_name),
@@ -307,12 +312,12 @@ def deploy_repo(base_dir, repo_name, url, branch=None, overwrite=False, **_):  #
                     err = ''
                     break
                 err = result.stdout.strip()
-                ERROR_LOG(f"WARNING: Failure installing repository '{repo_name}' as user: {err}\nTrying as root...")
+                ERROR_LOG(f"WARNING: Failure installing repo '{repo_name}' as user: {err}\nTrying as root...")
             except (Exception, BaseException) as exc:
                 err = str(exc)
         if err:
             ok = False
-            ERROR_LOG(f"ERROR: Failure acquiring GitHub repository URL '{url}': {err}")
+            ERROR_LOG(f"ERROR: Failure acquiring GitHub repo URL '{url}': {err}")
     return ok
 
 
