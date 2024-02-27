@@ -7,6 +7,8 @@ Utilities to supplement networking stack functions.
 """
 # pylint:disable=no-member # (many valid 'socket' members flagged)
 
+import subprocess
+import re
 import socket
 from urllib.parse import urlparse
 import urllib.request
@@ -31,15 +33,27 @@ def get_ipaddr(host=None):
                 sock.connect(('<broadcast>', 0))
                 ipaddr = sock.getsockname()[0]
         except (Exception, BaseException):
-            for url in ("https://ipecho.net/plain", "https://api.ipify.org"):
-                try:
-                    with urllib.request.urlopen(url=url).read().decode() as ipaddr:
-                        if ipaddr:
-                            break
-                except (Exception, BaseException):
-                    pass
-            else:
-                ipaddr = None
+            try:
+                ifidx = 0  # (arbitrarily pick the first interface found via the shell command enumerating interfaces)
+                for cmd in ('ip addr', 'ifconfig -a', 'ipconfig'):
+                    result = subprocess.run(cmd, shell=True, check=False, encoding='utf-8',
+                                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                    if result.returncode == 0:
+                        addrs = [re.findall(r'.*?((?:\d{1,3}\.){3}\d+).*', line)
+                                 for line in result.stdout.split('\n')
+                                 if line and any(line.strip().split()[0].lower() == k for k in ('inet', 'ipv4'))]
+                        break
+                ipaddr = [addr[0] for addr in addrs if not is_localhost(addr[0])][ifidx]
+            except (Exception, BaseException):
+                for url in ("https://ipecho.net/plain", "https://api.ipify.org"):
+                    try:
+                        with urllib.request.urlopen(url=url).read().decode() as ipaddr:
+                            if ipaddr:
+                                break
+                    except (Exception, BaseException):
+                        pass
+                else:
+                    ipaddr = None
     return ipaddr
 
 
