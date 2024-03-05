@@ -23,18 +23,20 @@ try:
 except ImportError:  # (tolerate during 'pyutils' install only)
     getpass = None
 
-try:
-    import warnings
+import warnings
+with suppress(Exception):
     warnings.filterwarnings('ignore', category=DeprecationWarning, module='pip._vendor.packaging.version')
+with suppress(Exception):
     warnings.filterwarnings("ignore", category=UserWarning, module="_distutils_hack")
-    # noinspection PyPackageRequirements,PyProtectedMember
-    from pip._internal.cli.main import main as pip_main  # pylint:disable=protected-access
+try:
+    sys.path = site.getsitepackages() + sys.path  # (more (new) pip stupidity: reinstate clobbered module path)
+    # noinspection PyPackageRequirements
+    import pip
+    pip_main = pip.main  # pylint:disable=no-member
 except ImportError:
-    warnings = None
-    try:
-        # noinspection PyPackageRequirements
-        import pip
-        pip_main = pip.main  # pylint:disable=no-member
+    try:  # (legacy)
+        # noinspection PyPackageRequirements,PyProtectedMember
+        from pip._internal.cli.main import main as pip_main  # pylint:disable=protected-access
     except ImportError:
         pip = pip_main = None  # pylint:disable=invalid-name
 
