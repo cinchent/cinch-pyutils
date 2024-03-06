@@ -16,6 +16,8 @@ from types import SimpleNamespace
 from contextlib import suppress
 import operator
 import subprocess
+import json
+from urllib.parse import urlparse
 import tempfile
 from textwrap import dedent
 import importlib
@@ -23,6 +25,7 @@ import importlib.machinery as impmach
 import importlib.util as imputil
 import warnings
 
+# noinspection PyDeprecation
 import pkg_resources
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
 warnings.filterwarnings("ignore", category=UserWarning, module="_distutils_hack")
@@ -38,7 +41,7 @@ try:
     import requirements
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', category=DeprecationWarning)
-        from distutils.version import LooseVersion as Version
+        from distutils.version import LooseVersion as Version  # pylint:disable=deprecated-module
     warnings.filterwarnings("ignore", category=UserWarning, module="_distutils_hack")
 except ImportError:
     requirements = None
@@ -159,6 +162,7 @@ def import_module_source(modname, filespec=None, altpath=None, code=None, expand
         else:
             syspath = []
         modfilespec = filespec
+        # noinspection PyTypeChecker
         for pathdir in [None] + syspath:
             error = None
             if modfilespec:
@@ -428,7 +432,7 @@ def symsubst(text, environ=None, defaults=None, strict=False):  # noqa: C901
 
                 # Perform any nested substitutions in the expansion text.
                 if '$' in symval:
-                    if any(s in symval for s in (f'${{{sym}}}', f'${{{sym}:')):
+                    if any(s in symval for s in (f'${{{sym}}}', f'${{{sym}: '.rstrip())):
                         symdefs.setdefault(sym, '')
                     symdefs[sym] = symval = _subst_ref(symval, _level=_level + 1)
 
@@ -556,16 +560,16 @@ def isinstanceof(obj, cls, strict=False):
     .. note::
      * (editorial) This fix is necessary due to the deficient Python import
        implementation, wherein two modules are not recognized as being identical
-       if importation of one is resolved directly using sys.path and importation
-       of the other resolves the very same module via specification of the
-       (sub)packages where the module resides -- the so-called "double-import
-       trap"; the modules are regarded as distinct because their (sub)package
-       affiliations differ.  By any objective standards, if these two techniques
-       for how the import loader happens to resolve the modules result in both
-       importing the class by name from the same source file, the classes should
-       be considered as functionally interchangeable, and likewise for their
-       instances; there is no use case where considering the classes as distinct
-       is desirable.
+       if importation of one is resolved directly using 'sys.path' and
+       importation of the other resolves the very same module via specification
+       of the (sub)packages where the module resides -- the so-called
+       "double-import trap"; the modules are regarded as distinct because their
+       (sub)package affiliations differ.  By any objective standards, if these
+       two techniques for how the import loader happens to resolve the modules
+       result in both importing the class by name from the same source file,
+       the classes should be considered as functionally interchangeable, and
+       likewise for their instances; there is no use case where considering the
+       classes as distinct is desirable.
      * This implementation devolves to the native Python built-in isinstance()
        function whenever possible, and digs deeper only when the native function
        fails to find a matching relationship.
@@ -594,7 +598,7 @@ def isinstanceof(obj, cls, strict=False):
 
 def package_name(name, package_naming=True):
     """
-    Returns the sppecified type of name associated with a package.
+    Returns the specified type of name associated with a package.
 
     :param name:           Project name for a package
     :type  name:           str
@@ -607,7 +611,7 @@ def package_name(name, package_naming=True):
 
     .. note::
      * pip introduces the gratuitous abomination of "package name" vs.
-       "project name" tor each package: pip manages packages using the
+       "project name" for each package: pip manages packages using the
        "package name" (*usually* dash-only word separators), whereas Python
        universally refers to package name (underscores as word-separators);
        `package_naming` allows the caller to specify the context of the
@@ -620,9 +624,9 @@ def parse_package_requirements(reqs, package_naming=True):
     """
     Parses pip "frozen" requirements as specified by text or file.
 
-    :param req:            Requirements to parse
+    :param reqs:           Requirements to parse
                            (starts with '@' => filespec of requirements file)
-    :type  req:            Union[str, Path]
+    :type  reqs:           Union[str, Path]
     :param package_naming: "Use package names, not project names for keys."
     :type  package_naming: bool
 
@@ -648,9 +652,9 @@ def check_package_requirements(reqs, packages=None, ignore=None,
     Checks that all imported packages in specified collection of packages
     conform to the package requirements.
 
-    :param req:            Requirements to parse
+    :param reqs:           Requirements to parse
                            (starts with '@' => filespec of requirements file)
-    :type  req:            Union[str, Path]
+    :type  reqs:           Union[str, Path]
     :param packages:       Names of packages to check
                            (None => all packages in requirements file)
     :type  packages:       Union[Iterable, str, None]
@@ -709,12 +713,14 @@ def check_package_requirements(reqs, packages=None, ignore=None,
         except (Exception, BaseException):
             actual = None
         if not actual or not req:
+            # noinspection PyArgumentList
             failed[pkgname] = package_mismatch(actual=actual, required=req)
             continue
 
         if not all(getattr(operator, ops.get(op), lambda *_: False)
                    (Version(actual), Version(ver))
                    for (op, ver) in req):
+            # noinspection PyArgumentList
             failed[pkgname] = package_mismatch(actual=actual, required=req)
 
     return failed
@@ -741,6 +747,18 @@ def get_installed_packages(package_types='all', package_naming=True):
     .. note::
      * See `package_name()` for more about `package_naming`.
     """
+    def _is_editable(_pkginfo, _sites):
+        """ Utility: Determines if file location corresponding to a package indicates an "editable" package. """
+        _editable = _pkginfo.location not in _sites
+        if not _editable:
+            with suppress(Exception):
+                _egg_info = json.loads(Path(_pkginfo.egg_info).joinpath('direct_url.json').read_text(encoding='utf-8'))
+                _editable = _egg_info.get('dir_info', {}).get('editable', False)
+                if _editable:  # (if editable, convert entry to an EggInfoDistribution object)
+                    _url = urlparse(_egg_info['url'])
+                    _pkginfo.location = _url.path
+        return _editable
+
     if isinstance(package_types, str):
         package_types = package_types.split()
     package_types = [p.lower() for p in package_types]
@@ -751,9 +769,11 @@ def get_installed_packages(package_types='all', package_naming=True):
     if any(pt in package_types for pt in 'all user'.split()):
         sitepkgs.add(site.getusersitepackages())
     editable = any(pt in package_types for pt in 'all editable'.split())
+    # noinspection PyDeprecation
+    working_set = pkg_resources.working_set.by_key
     return {package_name(p.project_name, package_naming=package_naming): p
-            for p in pkg_resources.working_set  # pylint:disable=not-an-iterable
-            if editable and p.location not in allsite or p.location in sitepkgs}
+            for p in working_set.values()
+            if editable and _is_editable(p, allsite) or p.location in sitepkgs}
 
 
 def build_dependencies(pkgname, dependencies=None, packages=None,

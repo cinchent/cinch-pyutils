@@ -16,6 +16,12 @@ from contextlib import suppress
 from functools import lru_cache
 from io import StringIO
 
+import warnings
+with suppress(Exception):
+    warnings.filterwarnings('ignore', category=DeprecationWarning, module='pip._vendor.packaging.version')
+with suppress(Exception):
+    warnings.filterwarnings("ignore", category=UserWarning, module="_distutils_hack")
+
 REQUIREMENTS_FILESPEC = 'requirements.txt'
 
 try:
@@ -23,11 +29,6 @@ try:
 except ImportError:  # (tolerate during 'pyutils' install only)
     getpass = None
 
-import warnings
-with suppress(Exception):
-    warnings.filterwarnings('ignore', category=DeprecationWarning, module='pip._vendor.packaging.version')
-with suppress(Exception):
-    warnings.filterwarnings("ignore", category=UserWarning, module="_distutils_hack")
 try:
     sys.path = site.getsitepackages() + sys.path  # (more (new) pip stupidity: reinstate clobbered module path)
     # noinspection PyPackageRequirements
@@ -102,7 +103,10 @@ def get_package_dir(pkgname):
     """
     try:
         output = run_pip(['show', pkgname])
-        location = re.search(r'\nLocation: *(.*)\n', output).group(1).strip()
+        try:
+            location = re.search(r'\nEditable.*: *(.*)\n', output).group(1).strip()
+        except (Exception, BaseException):
+            location = re.search(r'\nLocation: *(.*)\n', output).group(1).strip()
     except (Exception, BaseException):
         location = None
     return Path(location) if location else None

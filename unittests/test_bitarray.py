@@ -273,7 +273,6 @@ class Util:
     def assertStopIteration(self, it):
         self.assertRaises(StopIteration, next, it)
 
-    # pylint:disable=no-self-use
     # noinspection PyMethodMayBeStatic
     def assertRaisesMessage(self, excClass, msg, func, *args, **kwargs):
         try:
@@ -2153,7 +2152,6 @@ tests.append(MethodTests)
 
 # ---------------------------------------------------------------------------
 class BytesTests(unittest.TestCase, Util):
-    # pylint:disable=no-self-use
     # noinspection PyMethodMayBeStatic
     def randombytes(self):
         for n in range(1, 20):

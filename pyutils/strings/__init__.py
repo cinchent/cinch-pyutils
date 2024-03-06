@@ -12,7 +12,7 @@ import warnings
 try:
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', category=DeprecationWarning)
-        from distutils.util import strtobool  # (deprecated)
+        from distutils.util import strtobool  # pylint:disable=deprecated-module
     warnings.filterwarnings("ignore", category=UserWarning, module="_distutils_hack")
 except ImportError:
     def strtobool(val):  # (cut-n-paste from distutils.util)  # pylint:disable=too-many-return-statements
