@@ -6,6 +6,7 @@
 """
 Utilities to support setuptools/pip installation.
 """
+# pylint:disable=wrong-import-position
 
 import sys
 import os
@@ -17,8 +18,12 @@ import shutil
 from setuptools import (setup as _setup, find_packages)
 from setuptools.command.install import install as _installer
 
+sys.path.insert(0, str(Path(__file__).parents[2]))
+# noinspection PyUnresolvedReferences,PyPackageRequirements
 from pyutils.strings import truthy
+# noinspection PyUnresolvedReferences,PyPackageRequirements
 from pyutils.pip import (read_requirements, install_external_packages)
+# noinspection PyUnresolvedReferences,PyPackageRequirements
 from pyutils.git import GITHUB_DEFAULT_BRANCH
 
 

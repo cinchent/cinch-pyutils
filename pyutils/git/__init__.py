@@ -5,7 +5,7 @@
 """
 Utilities to provide special functions for `git` and GitHub repositories.
 """
-# pylint:disable=cyclic-import
+# pylint:disable=wrong-import-position,cyclic-import
 
 import sys
 import os
@@ -32,6 +32,8 @@ try:
 except ImportError:  # (tolerate during 'pyutils' install only)
     getpass = requests = None
 
+sys.path.insert(0, str(Path(__file__).parents[2]))
+# noinspection PyUnresolvedReferences,PyPackageRequirements
 from pyutils.cryptutils import (TextObfuscator, OBFUSCATOR_FILE, OBFUSKEY)
 
 # --- GitHub Enterprise:
@@ -93,7 +95,7 @@ def get_token():
 def url_reformat(url, scheme=None, creds=None, suffix=None, ref=None):  # noqa:C901
     """
     Reformats a GitHub repository URL to a canonical format of the specified URL scheme, optionally including
-    credentials and a "commit-ish" reference xpecification.
+    credentials and a "commit-ish" reference specification.
 
     :param url:     Repository URL
     :type  url:     str
@@ -202,8 +204,10 @@ def url_reformat(url, scheme=None, creds=None, suffix=None, ref=None):  # noqa:C
             parts = parts._replace(scheme=scheme.split('scp')[0], netloc=netloc,
                                    path='/:'[scheme == 'scp'] + parts.path.lstrip('/:'),
                                    fragment=ref)
+            # noinspection PyTypeChecker
             url = urlunparse(parts).lstrip('/')
             if scheme == 'scp':  # (special case: eliminate path separator automatically inserted by unparse())
+                # noinspection PyTypeChecker
                 url = url.replace('/:', ':')
 
         # ---- Format HTTP-like scheme:
@@ -216,6 +220,7 @@ def url_reformat(url, scheme=None, creds=None, suffix=None, ref=None):  # noqa:C
             raise ValueError("unrecognized scheme")
 
         # Apply scheme prefix as applicable.
+        # noinspection PyTypeChecker
         url = prefix + url
     except StopIteration:
         pass
@@ -448,6 +453,7 @@ def _get_repo_content_cached(reponame, repopath, ref, caches, maxdepth=-1):
             continue
 
         if cache == 'pip':  # (try among locally pip-installed Python packages)
+            # noinspection PyUnresolvedReferences,PyPackageRequirements
             from pyutils.pip import get_package_dir  # pylint:disable=import-outside-toplevel
             foundpath = get_package_dir(reponame) if caches else None
             fulltree = False
@@ -560,6 +566,7 @@ def git_repo(path):
     """ Accesses a locally cloned repo at a specific path. """
     if not Repo:
         raise NotImplementedError("GitPython package not installed")
+    # noinspection PyCallingNonCallable
     return Repo(path)
 
 

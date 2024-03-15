@@ -95,11 +95,11 @@ class BitArray:
             result = False
         return result
 
-    def __len__(self):
-        return self._bitlen
-
     def length(self):
         return self.__len__()
+
+    def __len__(self):
+        return self._bitlen
 
     def size(self):
         # pylint:disable=used-before-assignment
@@ -575,7 +575,7 @@ class BitArray:
         return count
 
     def __repr__(self):
-        return "bitarray({1}{0}{1})".format(self.__str__(), "'"[:self._bitlen > 0])
+        return "bitarray('{}')".format(self.__str__()) if self else 'bitarray()'
 
     def __str__(self):
         return self.to01()
@@ -597,7 +597,7 @@ class BitArray:
         self.extend(bytearray(bytarr))
         return self
 
-    def unpack(self, zero=b'\x00', one=b'\xFF'):
+    def unpack(self, zero=b'\x00', one=b'\x01'):
         symbols = zero + one
         if not isinstance(symbols, bytes) or (len(zero), len(one)) != (1, 1):
             raise TypeError("symbols must be bytes")
@@ -687,10 +687,17 @@ class BitArray:
                 self.size(),
                 self.endian(),
                 self._lenfill() & 0x7,
-                self.size())
+                self.size(),
+                False,
+                False,
+                0)
 
 
 try:
+    # noinspection PyUnresolvedReferences
+    import os
+    if os.getenv('custom_bitarray', ''):
+        raise ImportError
     # noinspection PyPackageRequirements
     from bitarray import bitarray
     if bitarray.__name__ != 'bitarray':
@@ -726,8 +733,12 @@ except ImportError:
     # pylint:disable=invalid-name,missing-function-docstring
     # noinspection PyPep8Naming
     class frozenbitarray(bitarray):
+        def __str__(self):
+            _str = bitarray.__str__(self)
+            return "{}({})".format(self.__class__.__name__, "'{}'".format(_str) if _str else '')
+
         def __repr__(self):
-            return 'frozen' + bitarray.__repr__(self)
+            return self.__str__()
 
         def __hash__(self):
             if getattr(self, '_hash', None) is None:

@@ -5,7 +5,7 @@
 """
 Utilities to provide special functions to supplement 'pip' deficiencies.
 """
-# pylint:disable=cyclic-import
+# pylint:disable=wrong-import-position,cyclic-import
 
 import sys
 import os
@@ -30,17 +30,19 @@ except ImportError:  # (tolerate during 'pyutils' install only)
     getpass = None
 
 try:
-    sys.path = site.getsitepackages() + sys.path  # (more (new) pip stupidity: reinstate clobbered module path)
+    sys.path = site.getsitepackages() + sys.path  # (more (new) pip stupidity: reinstate clobbered module path on macOS)
     # noinspection PyPackageRequirements
     import pip
     pip_main = pip.main  # pylint:disable=no-member
 except ImportError:
     try:  # (legacy)
-        # noinspection PyPackageRequirements,PyProtectedMember
+        # noinspection PyUnresolvedReferences,PyPackageRequirements,PyProtectedMember
         from pip._internal.cli.main import main as pip_main  # pylint:disable=protected-access
     except ImportError:
         pip = pip_main = None  # pylint:disable=invalid-name
 
+sys.path.insert(0, str(Path(__file__).parents[2]))
+# noinspection PyUnresolvedReferences,PyPackageRequirements
 from pyutils.git import (url_reformat, deploy_repo)  # pylint:disable=wrong-import-position
 
 ERROR_LOG = lambda *a, **k: print(*a, file=sys.stderr, **k)  # noqa:E731
@@ -274,7 +276,8 @@ def install_external_packages(package_urls, base_dir=None, reinstall=False, over
         # Install the cloned package (may fail because 'pip' doesn't detect a successful installation during run).
         err = None
         try:
-            _ = run_pip(['install', '--editable', pkgname], command_opts=install_opts)
+            subcmd = f"install --editable {pkgname}"  # @@@ --config-settings editable_mode=compat
+            _ = run_pip(subcmd.split(), command_opts=install_opts)
             # @@@ TODO: add --root-user-action=ignore when supported ubiquitously in pip (>= 21.x)
         except RuntimeError as exc:
             err = exc

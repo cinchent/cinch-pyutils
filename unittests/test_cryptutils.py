@@ -1,7 +1,8 @@
 """
 Tests for cryptutils
 """
-# pylint:disable=missing-class-docstring,missing-function-docstring
+# pylint:disable=missing-class-docstring,missing-function-docstring,wrong-import-position
+
 import unittest
 
 try:
@@ -9,7 +10,10 @@ try:
     # noinspection PyUnresolvedReferences
     from cryptutils import (TextObfuscator, NumericObfuscator)
 except ImportError:
-    # noinspection PyUnresolvedReferences
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parents[1]))
+    # noinspection PyUnresolvedReferences,PyPackageRequirements
     from pyutils.cryptutils import (TextObfuscator, NumericObfuscator)
 
 
