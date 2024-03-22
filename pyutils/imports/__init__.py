@@ -277,11 +277,11 @@ def execute_script_vars(obj, filespec, content=None):
                 set -a; source {} >/dev/null
                 popd >/dev/null
                 """).format(*os.path.split(str(filespec)))
-            exec_file.write(dedent(f"""\
+            exec_file.write(dedent("""\
                 #!/usr/bin/env bash
-                {source_code}
+                {}
                 env
-                """))
+                """).format(source_code))
         os.chmod(exec_filespec, 0o700)
         symdefs = subprocess.check_output([exec_filespec], shell=True, encoding='utf-8').split('\n')
         for symdef in symdefs:

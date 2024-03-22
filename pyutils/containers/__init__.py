@@ -443,7 +443,7 @@ def flatten(obj, sep='.', _prefix='', include_parent=False):
     :rtype:  dict
 
     .. note::
-     * WARNING: Uses recursion to travers input object tree/dictionary.
+     * WARNING: Uses recursion to traverse input object tree/dictionary.
      * For dictionaries keyed by identifiers, the resulting keys in the flattened directory are composed hierarchically
        by the specified delimiter `sep`, unless `sep` is specified as None.
      * Key conflicts that might occur within the hierarchy are resolved by later items (in traversal order) superseding
